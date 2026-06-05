@@ -1,184 +1,233 @@
-// Inicializa o Kaboom.js dentro da div que criamos no HTML
+// Inicializa o Kaboom.js dentro da div do HTML
 kaboom({
     root: document.getElementById("game-container"),
     width: 800,
     height: 600,
-    background: [135, 206, 235], // Cor de fundo: Azul Céu
+    background: [20, 20, 40], // Fundo padrão escuro
 });
 
 // ==========================================================
-// 1. CARREGAMENTO DE RECURSOS (Imagens e Sons)
+// 1. CARREGAMENTO DE IMAGENS (ASSETS)
 // ==========================================================
-// O Kaboom usa um personagem padrão chamado "bean" (um feijãozinho).
-// Futuramente, você vai trocar isso por: loadSprite("sofia", "pasta/sofia.png")
-loadBean("sofia"); 
+// Quando tiver suas imagens na pasta "assets", descomente (tire as //) destas linhas:
+// loadSprite("sofia", "assets/sofia.png");
+// loadSprite("chao_cidade", "assets/chao_cidade.png");
+// loadSprite("chao_pedra", "assets/chao_pedra.png");
+// loadSprite("chao_selva", "assets/chao_selva.png");
+// loadSprite("item", "assets/item.png");
 
-const VELOCIDADE_MOVIMENTO = 300;
-const FORCA_PULO = 700;
+// Configurações Globais da Física
+const VELOCIDADE = 350;
+const FORCA_PULO = 750;
+const GRAVIDADE = 1800;
 
 // ==========================================================
-// FASE 1: O Início (7 de Setembro de 2024 - RJ e RS)
+// FASE 1: O Início (7 de Set. 2024 - Conexão RJ/Pelotas)
 // ==========================================================
 scene("fase1", () => {
-    setGravity(1600);
+    setGravity(GRAVIDADE);
+    setBackground(135, 206, 235); // Céu azul
 
-    // Adiciona o texto na tela
+    // Texto da Fase fixo na tela (não se move com a câmera)
     add([
         text("7 de Set. 2024\nConexao RJ - Pelotas", { size: 24 }),
         pos(20, 20),
-        color(0, 0, 0)
+        color(0, 0, 0),
+        fixed() 
     ]);
 
-    // O jogador: Sofia
+    // MAPA DA FASE 1
+    const mapa = [
+        "                                      ",
+        "                                      ",
+        "                                     @",
+        "                          ======      ",
+        "                                      ",
+        "             ======                   ",
+        "                                      ",
+        "======================================",
+    ];
+
+    const configMapa = {
+        tileWidth: 40,
+        tileHeight: 40,
+        tiles: {
+            "=": () => [
+                rect(40, 40), color(100, 100, 100), // Substitua por: sprite("chao_cidade"),
+                area(), body({ isStatic: true })
+            ],
+            "@": () => [
+                circle(15), color(255, 215, 0),     // Substitua por: sprite("item"),
+                area(), "objetivo"
+            ]
+        }
+    };
+
+    addLevel(mapa, configMapa);
+
+    // O JOGADOR (Sofia)
     const player = add([
-        sprite("sofia"),
-        pos(50, 400),
+        rect(40, 40), color(255, 105, 180),         // Substitua por: sprite("sofia"),
+        pos(50, 100),
         area(),
         body(),
     ]);
 
-    // O chão da fase 1 (Cinza urbano)
-    add([
-        rect(800, 50),
-        pos(0, 550),
-        outline(4),
-        area(),
-        body({ isStatic: true }),
-        color(100, 100, 100),
-    ]);
-
-    // Plataformas flutuantes
-    add([rect(150, 20), pos(200, 450), area(), body({ isStatic: true }), color(100, 100, 100)]);
-    add([rect(150, 20), pos(450, 350), area(), body({ isStatic: true }), color(100, 100, 100)]);
-
-    // O objetivo desta fase: "O Sinal de Wi-Fi" (O primeiro contato)
-    // Aqui estamos usando um círculo amarelo para representar a mensagem
-    add([
-        circle(20),
-        pos(500, 300),
-        area(),
-        color(255, 215, 0),
-        "mensagem" // Uma tag para sabermos com o que a Sofia colidiu
-    ]);
-
-    // Controle da personagem
-    onKeyDown("right", () => player.move(VELOCIDADE_MOVIMENTO, 0));
-    onKeyDown("left", () => player.move(-VELOCIDADE_MOVIMENTO, 0));
-    onKeyPress("space", () => {
-        if (player.isGrounded()) player.jump(FORCA_PULO);
+    // Câmera e limite de queda
+    player.onUpdate(() => {
+        camPos(player.pos.x, 300);
+        if (player.pos.y > 800) { shake(10); go("fase1"); }
     });
 
-    // Lógica: Quando a Sofia pegar a mensagem, vai para a Fase 2
-    player.onCollide("mensagem", (msg) => {
-        destroy(msg); // Remove a mensagem da tela
-        go("fase2");  // Carrega a próxima fase
-    });
+    // Controles
+    onKeyDown("right", () => { player.move(VELOCIDADE, 0); player.flipX = false; });
+    onKeyDown("left", () => { player.move(-VELOCIDADE, 0); player.flipX = true; });
+    onKeyPress("space", () => { if (player.isGrounded()) player.jump(FORCA_PULO); });
+
+    // Passar de fase
+    player.onCollide("objetivo", () => { go("fase2"); });
 });
 
 // ==========================================================
 // FASE 2: O Encontro (23 de Março - Santa Teresa, RJ)
 // ==========================================================
 scene("fase2", () => {
-    setGravity(1600);
-    setBackground(255, 182, 193); // Muda o céu para um tom de pôr do sol rosado
+    setGravity(GRAVIDADE);
+    setBackground(255, 182, 193); // Pôr do sol rosado
 
     add([
         text("23 de Marco\nO bondinho de Santa Teresa", { size: 24 }),
         pos(20, 20),
-        color(0, 0, 0)
+        color(0, 0, 0),
+        fixed()
     ]);
 
+    // MAPA DA FASE 2 (Estilo ladeira/escadas)
+    const mapa = [
+        "                                            ",
+        "                                            ",
+        "                                           @",
+        "                                      ======",
+        "                                            ",
+        "                                =====       ",
+        "                                            ",
+        "                          =====             ",
+        "                                            ",
+        "              ======                        ",
+        "                                            ",
+        "=======   ==                                ",
+    ];
+
+    const configMapa = {
+        tileWidth: 40,
+        tileHeight: 40,
+        tiles: {
+            "=": () => [
+                rect(40, 40), color(139, 69, 19), // Substitua por: sprite("chao_pedra"),
+                area(), body({ isStatic: true })
+            ],
+            "@": () => [
+                rect(40, 40), color(0, 0, 255),   // Representa você esperando
+                area(), "objetivo"
+            ]
+        }
+    };
+
+    addLevel(mapa, configMapa);
+
     const player = add([
-        sprite("sofia"),
-        pos(50, 400),
+        rect(40, 40), color(255, 105, 180),       // Substitua por: sprite("sofia"),
+        pos(50, 300),
         area(),
         body(),
     ]);
 
-    // Chão e plataformas estilo Ladeiras de Paralelepípedo
-    add([rect(300, 50), pos(0, 550), area(), body({ isStatic: true }), color(139, 69, 19)]);
-    add([rect(200, 50), pos(400, 450), area(), body({ isStatic: true }), color(139, 69, 19)]);
-    add([rect(150, 50), pos(650, 350), area(), body({ isStatic: true }), color(139, 69, 19)]);
-
-    // O perigo (o vão entre as ruas). Se cair, reinicia a fase
     player.onUpdate(() => {
-        if (player.pos.y > 650) {
-            go("fase2"); // Caiu, tenta de novo
-        }
+        camPos(player.pos.x, player.pos.y); // Câmera segue X e Y por causa da ladeira
+        if (player.pos.y > 1000) { shake(10); go("fase2"); }
     });
 
-    // O "Você" (representado por um quadrado azul esperando nela no final da ladeira)
-    add([
-        rect(40, 40),
-        pos(700, 310),
-        area(),
-        color(0, 0, 255),
-        "voce_no_rio"
-    ]);
+    onKeyDown("right", () => { player.move(VELOCIDADE, 0); player.flipX = false; });
+    onKeyDown("left", () => { player.move(-VELOCIDADE, 0); player.flipX = true; });
+    onKeyPress("space", () => { if (player.isGrounded()) player.jump(FORCA_PULO); });
 
-    onKeyDown("right", () => player.move(VELOCIDADE_MOVIMENTO, 0));
-    onKeyDown("left", () => player.move(-VELOCIDADE_MOVIMENTO, 0));
-    onKeyPress("space", () => {
-        if (player.isGrounded()) player.jump(FORCA_PULO);
-    });
-
-    // Lógica: Quando vocês se encontrarem, avança para a Fase 3
-    player.onCollide("voce_no_rio", () => {
-        go("fase3");
-    });
+    player.onCollide("objetivo", () => { go("fase3"); });
 });
 
 // ==========================================================
 // FASE 3: O Presente (Tefé, Amazonas)
 // ==========================================================
 scene("fase3", () => {
-    setGravity(1600);
-    setBackground(34, 139, 34); // Fundo verde floresta
+    setGravity(GRAVIDADE);
+    setBackground(34, 139, 34); // Verde Floresta
 
     add([
         text("Hoje\nA aventura ate Tefe", { size: 24 }),
         pos(20, 20),
-        color(255, 255, 255)
+        color(255, 255, 255),
+        fixed()
     ]);
 
+    // MAPA DA FASE 3 (Plataformas distantes sobre a "água")
+    const mapa = [
+        "                                                         ",
+        "                                                        @",
+        "                                                    =====",
+        "                                                         ",
+        "                                          =====          ",
+        "                                                         ",
+        "                             ======                      ",
+        "                                                         ",
+        "                 ======                                  ",
+        "                                                         ",
+        "========                                                 ",
+        "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+    ];
+
+    const configMapa = {
+        tileWidth: 40,
+        tileHeight: 40,
+        tiles: {
+            "=": () => [
+                rect(40, 40), color(0, 100, 0), // Vitória-régias/Folhas
+                area(), body({ isStatic: true })
+            ],
+            "^": () => [
+                rect(40, 40), color(0, 0, 255), // Rio Solimões (Água)
+                area(), "agua"
+            ],
+            "@": () => [
+                rect(40, 40), color(255, 215, 0), // Você com o presente final
+                area(), "objetivo_final"
+            ]
+        }
+    };
+
+    addLevel(mapa, configMapa);
+
     const player = add([
-        sprite("sofia"),
-        pos(20, 400),
+        rect(40, 40), color(255, 105, 180),
+        pos(50, 300),
         area(),
         body(),
     ]);
 
-    // Plataformas flutuantes estilo Vitória-Régia no Rio Solimões
-    add([rect(150, 30), pos(0, 500), area(), body({ isStatic: true }), color(0, 100, 0)]);
-    add([rect(100, 30), pos(250, 450), area(), body({ isStatic: true }), color(0, 100, 0)]);
-    add([rect(100, 30), pos(450, 350), area(), body({ isStatic: true }), color(0, 100, 0)]);
-    add([rect(150, 30), pos(650, 250), area(), body({ isStatic: true }), color(0, 100, 0)]);
-
     player.onUpdate(() => {
-        if (player.pos.y > 650) {
-            go("fase3"); // Se cair na água, tenta de novo
-        }
+        camPos(player.pos.x, 300);
+        if (player.pos.y > 800) { shake(10); go("fase3"); }
     });
 
-    // O "Você" final, segurando o coração/presente (Quadrado azul + Coração)
-    add([
-        rect(40, 40),
-        pos(700, 210),
-        area(),
-        color(0, 0, 255),
-        "voce_no_amazonas"
-    ]);
-
-    onKeyDown("right", () => player.move(VELOCIDADE_MOVIMENTO, 0));
-    onKeyDown("left", () => player.move(-VELOCIDADE_MOVIMENTO, 0));
-    onKeyPress("space", () => {
-        if (player.isGrounded()) player.jump(FORCA_PULO);
+    // Se encostar na água, recomeça
+    player.onCollide("agua", () => {
+        shake(10);
+        go("fase3");
     });
 
-    // Lógica: Encontro final
-    player.onCollide("voce_no_amazonas", () => {
-        go("vitoria");
-    });
+    onKeyDown("right", () => { player.move(VELOCIDADE, 0); player.flipX = false; });
+    onKeyDown("left", () => { player.move(-VELOCIDADE, 0); player.flipX = true; });
+    onKeyPress("space", () => { if (player.isGrounded()) player.jump(FORCA_PULO); });
+
+    player.onCollide("objetivo_final", () => { go("vitoria"); });
 });
 
 // ==========================================================
@@ -188,14 +237,14 @@ scene("vitoria", () => {
     setBackground(26, 11, 46); // Fundo escuro romântico
 
     add([
-        text("Feliz Dia dos Namorados,\nSofia Eymard!", { size: 32, width: 700, align: "center" }),
+        text("Feliz Dia dos Namorados,\nSofia Eymard!", { size: 28, width: 700, align: "center" }),
         pos(width() / 2, height() / 2 - 100),
         anchor("center"),
-        color(255, 105, 180) // Rosa
+        color(255, 105, 180)
     ]);
 
     add([
-        text("De Pelotas ao Rio, e agora em Tefe.\nA melhor aventura da minha vida\ne estar com voce.", { size: 18, width: 700, align: "center" }),
+        text("De Pelotas ao Rio, e agora em Tefe.\nA melhor aventura da minha vida\ne estar com voce.", { size: 16, width: 700, align: "center" }),
         pos(width() / 2, height() / 2 + 50),
         anchor("center"),
         color(255, 255, 255)
@@ -203,7 +252,6 @@ scene("vitoria", () => {
 });
 
 // ==========================================================
-// INICIA O JOGO
+// INICIA O JOGO NA FASE 1
 // ==========================================================
-// Dá o play chamando a primeira fase da história
 go("fase1");
