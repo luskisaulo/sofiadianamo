@@ -1,19 +1,22 @@
-// =========================================================================
-// MOTOR KABOOM - RENDERIZAÇÃO RETRÔ E ESCALA PERFEITA
-// =========================================================================
+// ============================================================================================
+// MOTOR KABOOM V3 - CONFIGURAÇÃO DE ALTA PERFORMANCE
+// ============================================================================================
 kaboom({
     root: document.getElementById("game-container"),
     width: 1280,
     height: 720,
-    letterbox: true,
-    background: [20, 24, 36], // Fundo noturno elegante
+    letterbox: true,      // Escala perfeita em qualquer tela (celular ou PC)
+    background: [10, 10, 15], // Tela de fundo escura (evita a "tela azul" do vazio)
     global: true,
 });
 
-// =========================================================================
-// 1. CARREGAMENTO (Apenas a Sofia)
-// =========================================================================
-// Mantemos a Sofia, mas vamos forçar o tamanho dela caso a imagem esteja errada
+// ============================================================================================
+// 1. GERENCIAMENTO DE ASSETS E PRELOADER SEGURO
+// ============================================================================================
+// O jogo não vai quebrar se a imagem não carregar. Ele vai usar quadrados estilizados como fallback.
+loadSprite("fundo_rio", "assets/fundo_rio.jpeg").catch(() => {});
+
+// Fatiamento da Sofia. IMPORTANTE: Se ela ficar invisível, o problema é o tamanho do seu PNG.
 loadSprite("sofia", "assets/sofia.png", {
     sliceX: 4, sliceY: 4, 
     anims: {
@@ -22,248 +25,358 @@ loadSprite("sofia", "assets/sofia.png", {
         jump: { from: 8, to: 8 },
     }
 }).catch(() => {
-    // Se a imagem falhar, cria um boneco de fallback estilizado automaticamente
-    loadSpriteAtlas("fallback", { "sofia": { x: 0, y: 0, width: 40, height: 60 } });
+    // FALLBACK DE SEGURANÇA: Se a imagem falhar, cria uma boneca rosa
+    loadSpriteAtlas("fallback", { "sofia": { x: 0, y: 0, width: 40, height: 60 }});
 });
 
-// Constantes Físicas
+// ============================================================================================
+// 2. VARIÁVEIS GLOBAIS E FÍSICA
+// ============================================================================================
 const GRAVIDADE = 2400;
 const FORCA_PULO = 850;
 const VELOCIDADE_JOGADOR = 350;
 
 setGravity(GRAVIDADE);
 
-let pontuacao = 0;
-let vidas = 3;
+const ESTADO_GLOBAL = {
+    vidas: 3,
+    memorias: 0,
+    faseAtual: 1
+};
 
-// =========================================================================
-// 2. SISTEMA DE EFEITOS (GAME JUICE 100% CÓDIGO)
-// =========================================================================
-function spawnPoeira(p) {
+// ============================================================================================
+// 3. EFEITOS VISUAIS E GAME JUICE (SISTEMA DE PARTÍCULAS)
+// ============================================================================================
+function gerarPoeira(posicao) {
     add([
-        rect(8, 8), pos(p.x, p.y), color(200, 200, 200),
-        move(LEFT, rand(20, 60)), lifespan(0.3, { fade: 0.1 }), z(15)
+        rect(10, 10), pos(posicao.x, posicao.y - 5), color(200, 200, 200),
+        move(LEFT, rand(20, 80)), lifespan(0.3, { fade: 0.1 }), z(15)
     ]);
 }
 
-function spawnExplosaoInimigo(p) {
-    for (let i = 0; i < 12; i++) {
+function gerarExplosaoInimigo(posicao) {
+    for (let i = 0; i < 15; i++) {
         add([
-            rect(8, 8), pos(p), color(255, 50, 50),
-            move(rand(0, 360), rand(150, 400)), lifespan(0.4, { fade: 0.4 }), z(50)
+            rect(8, 8), pos(posicao), color(255, 50, 50),
+            move(rand(0, 360), rand(150, 500)), lifespan(0.5, { fade: 0.5 }), z(50)
         ]);
     }
 }
 
-function spawnBrilhoLembranca(p) {
-    for (let i = 0; i < 6; i++) {
-        add([
-            circle(4), pos(p), color(255, 215, 0),
-            move(UP, rand(50, 150)), lifespan(0.6, { fade: 0.3 }), z(50)
-        ]);
-    }
+// ============================================================================================
+// 4. ENTIDADES E COMPONENTES INTELIGENTES (IA e Física)
+// ============================================================================================
+
+// IA Básica de Patrulha para os Inimigos
+function patrulha(distancia = 100, velocidade = 100) {
+    let pInicial = null;
+    let dir = 1;
+    return {
+        id: "patrulha",
+        require: [ "pos" ],
+        add() { pInicial = this.pos.clone(); },
+        update() {
+            this.move(velocidade * dir, 0);
+            if (Math.abs(this.pos.x - pInicial.x) > distancia) dir = -dir;
+        }
+    };
 }
 
-// =========================================================================
-// 3. O JOGADOR (FÍSICA E ANIMAÇÃO PERFEITAS)
-// =========================================================================
-function instanciarJogador(posX, posY) {
+// Plataformas que se movem sozinhas
+function plataformaFlutuante(distancia, velocidade, eixo = 'x') {
+    let pInicial = null;
+    let dir = 1;
+    return {
+        id: "plat_movel",
+        require: [ "pos" ],
+        add() { pInicial = this.pos.clone(); },
+        update() {
+            if (eixo === 'x') {
+                this.move(velocidade * dir, 0);
+                if (Math.abs(this.pos.x - pInicial.x) > distancia) dir = -dir;
+            } else {
+                this.move(0, velocidade * dir);
+                if (Math.abs(this.pos.y - pInicial.y) > distancia) dir = -dir;
+            }
+        }
+    };
+}
+
+// ============================================================================================
+// 5. O CONSTRUTOR DO JOGADOR (A SOFIA) - FÍSICA BLINDADA
+// ============================================================================================
+function criarSofia(posX, posY, nomeCenaMorte) {
     const player = add([
         sprite("sofia"),
         pos(posX, posY),
-        // Se a imagem for muito grande, o scale reduz. Ajuste se necessário.
-        scale(0.35), 
-        anchor("bot"), // Ponto zero é a sola do pé. NUNCA MAIS AFUNDA.
-        area({ shape: new Rect(vec2(0, -40), 50, 80) }), // Hitbox exata manual
-        body(),
+        scale(0.35), // Ajuste a escala conforme o tamanho do seu PNG
+        anchor("bot"), // O segredo para não afundar no chão: colisão pelos pés
+        area({ shape: new Rect(vec2(0, -40), 40, 70) }), // Hitbox manual estrita
+        body(), // Habilita gravidade e colisão sólida
         z(30),
         "jogador",
         {
             invulneravel: false,
-            dano() {
+            sofrerDano() {
                 if (this.invulneravel) return;
-                vidas--;
+                ESTADO_GLOBAL.vidas--;
                 this.invulneravel = true;
-                shake(10);
-                if (vidas <= 0) go("gameover");
+                shake(15);
+                
+                if (ESTADO_GLOBAL.vidas <= 0) go("gameover");
                 
                 let piscando = true;
-                const piscar = loop(0.1, () => {
+                const efeito = loop(0.1, () => {
                     this.color = piscando ? rgb(255, 0, 0) : rgb(255, 255, 255);
                     piscando = !piscando;
                 });
-                wait(1.5, () => { piscar.cancel(); this.color = rgb(255, 255, 255); this.invulneravel = false; });
+                wait(1.5, () => { efeito.cancel(); this.color = rgb(255, 255, 255); this.invulneravel = false; });
             }
         }
     ]);
 
     player.play("idle");
 
+    // Lógica de Controles
     onKeyDown("right", () => {
         player.move(VELOCIDADE_JOGADOR, 0); player.flipX = false;
         if (player.isGrounded() && player.curAnim() !== "run") player.play("run");
     });
+    
     onKeyDown("left", () => {
         player.move(-VELOCIDADE_JOGADOR, 0); player.flipX = true;
         if (player.isGrounded() && player.curAnim() !== "run") player.play("run");
     });
-    onKeyRelease(["left", "right"], () => { if (player.isGrounded()) player.play("idle"); });
+    
+    onKeyRelease(["left", "right"], () => {
+        if (player.isGrounded()) player.play("idle");
+    });
     
     onKeyPress("space", () => {
         if (player.isGrounded()) {
-            player.jump(FORCA_PULO); player.play("jump"); spawnPoeira(player.pos);
+            player.jump(FORCA_PULO); player.play("jump"); gerarPoeira(player.pos);
         }
     });
 
     player.onGround(() => {
-        spawnPoeira(player.pos);
+        gerarPoeira(player.pos);
         if (!isKeyDown("left") && !isKeyDown("right")) player.play("idle");
         else player.play("run");
     });
 
+    // Câmera e Prevenção de Queda no Vazio (O erro que você relatou)
     player.onUpdate(() => {
-        camPos(player.pos.x + 200, height() / 2);
-        if (player.pos.y > height() + 300) { player.dano(); go(sceneName()); } // Caiu no buraco
+        camPos(player.pos.x + 250, height() / 2);
+        
+        // Se ela cair além do limite do mapa (3000 pixels para baixo), toma dano e reinicia
+        if (player.pos.y > 3000) {
+            player.sofrerDano();
+            if (ESTADO_GLOBAL.vidas > 0) go(nomeCenaMorte); 
+        }
     });
 
-    // Pular no inimigo
-    player.onCollide("inimigo", (inimigo, col) => {
+    // Combate: Pular na cabeça do inimigo
+    player.onCollide("inimigo", (ini, col) => {
         if (col.isBottom()) {
             player.jump(FORCA_PULO * 0.7);
-            destroy(inimigo);
-            spawnExplosaoInimigo(inimigo.pos);
-            pontuacao += 100;
+            destroy(ini);
+            gerarExplosaoInimigo(ini.pos);
+            ESTADO_GLOBAL.memorias += 100;
         } else {
-            player.dano();
+            player.sofrerDano();
         }
     });
 
     return player;
 }
 
-// =========================================================================
-// 4. LEVEL DESIGN (TUDO DESENHADO NO CÓDIGO)
-// =========================================================================
-
-scene("fase_rio", () => {
-    // DESENHANDO O CÉU E O FUNDO (Parallax em Código)
-    // Gradiente do Pôr do Sol no Rio
-    add([ rect(width(), height()), color(255, 140, 100), fixed(), z(0) ]);
-    add([ rect(width(), height()/2), pos(0, height()/2), color(200, 80, 80), fixed(), z(1) ]);
+// ============================================================================================
+// 6. INTERFACE (HUD)
+// ============================================================================================
+function criarHUD() {
+    const uiVidas = add([ text(`VIDAS: ${ESTADO_GLOBAL.vidas}`, { size: 28 }), pos(30, 30), fixed(), color(255, 50, 50), z(100) ]);
+    const uiPontos = add([ text(`MEMÓRIAS: ${ESTADO_GLOBAL.memorias}`, { size: 28 }), pos(30, 70), fixed(), color(255, 215, 0), z(100) ]);
     
-    // Prédios no fundo (Desenhados com retângulos)
-    for(let i = 0; i < 20; i++) {
-        let altura = rand(100, 400);
-        add([
-            rect(rand(80, 150), altura),
-            pos(i * 120, height() - altura),
-            color(50, 30, 40), z(2) // Escuros para dar profundidade
-        ]);
-    }
+    onUpdate(() => {
+        uiVidas.text = `VIDAS: ${ESTADO_GLOBAL.vidas}`;
+        uiPontos.text = `MEMÓRIAS: ${ESTADO_GLOBAL.memorias}`;
+    });
+}
 
-    // O MAPA DA FASE (Cada caractere é um bloco de 64x64)
-    // = : Asfalto/Chão
-    // [ e ] : Degraus da Ladeira
-    // - : Plataformas voadoras
-    // * : Inimigos (A Ansiedade/Distância)
-    // $ : Lembranças do dia 23 de Março
-    // P : Portal para a próxima fase
+// ============================================================================================
+// 7. LEVEL DESIGN - AS 3 FASES COMPLETAS
+// ============================================================================================
+
+// FASE 1: O Início (Pelotas / Setembro)
+scene("fase1_pelotas", () => {
+    add([ rect(width(), height()), color(30, 40, 60), fixed(), z(0) ]); // Fundo azul escuro frio
+    add([ text("7 de Set. 2024\nA primeira mensagem...", { size: 30 }), pos(100, 100), fixed(), color(255,255,255), z(1) ]);
+
+    const mapa = [
+        "                                               ",
+        "                                               ",
+        "                                           P   ",
+        "                                          ===  ",
+        "                             ====              ",
+        "                                               ",
+        "                  ====                         ",
+        "                                               ",
+        "=============================================== "
+    ];
+
+    addLevel(mapa, {
+        tileWidth: 64, tileHeight: 64, pos: vec2(0, height() - (9 * 64)),
+        tiles: {
+            "=": () => [ rect(64, 64), color(100, 100, 110), outline(2), area(), body({ isStatic: true }) ],
+            "P": () => [ rect(64, 128), color(0, 255, 100), area(), "portal" ]
+        }
+    });
+
+    // O SPAWN É SEGURO AQUI. Tem chão sob x: 100
+    const player = criarSofia(100, height() - 150, "fase1_pelotas");
+    criarHUD();
+
+    player.onCollide("portal", () => { go("cutscene_1"); });
+});
+
+// FASE 2: Santa Teresa (Março / O Encontro)
+scene("fase2_santateresa", () => {
+    add([ rect(width(), height()), color(255, 140, 100), fixed(), z(0) ]); // Pôr do sol
+    
+    // Tenta carregar a sua arte no fundo
+    try { add([ sprite("fundo_rio", { width: 3000, height: height() }), pos(0, 0), z(1) ]); } catch(e){}
+
+    const mapa = [
+        "                                                                     ",
+        "                                                                     ",
+        "                                                                 P   ",
+        "                                                                ===  ",
+        "                                              * ",
+        "                                    >        ====                    ",
+        "                            ===                                      ",
+        "                 ^                                                   ",
+        "                                                                     ",
+        "          ====                                                       ",
+        "     * ",
+        "===============      ============     ==============================="
+    ];
+
+    addLevel(mapa, {
+        tileWidth: 64, tileHeight: 64, pos: vec2(0, height() - (12 * 64)),
+        tiles: {
+            "=": () => [ rect(64, 64), color(180, 170, 160), outline(2), area(), body({ isStatic: true }) ],
+            "^": () => [ rect(128, 20), color(200, 100, 50), area(), body({ isStatic: true }), plataformaFlutuante(150, 100, 'y') ],
+            ">": () => [ rect(128, 20), color(200, 100, 50), area(), body({ isStatic: true }), plataformaFlutuante(200, 100, 'x') ],
+            "*": () => [ rect(40, 40), color(255, 50, 50), area(), body(), anchor("bot"), patrulha(150, 80), "inimigo" ],
+            "P": () => [ rect(64, 128), color(0, 255, 100), area(), "portal" ]
+        }
+    });
+
+    const player = criarSofia(100, height() - 300, "fase2_santateresa");
+    criarHUD();
+
+    player.onCollide("portal", () => { go("cutscene_2"); });
+});
+
+// FASE 3: Tefé, Amazonas (O Presente)
+scene("fase3_tefe", () => {
+    add([ rect(width(), height()), color(20, 80, 40), fixed(), z(0) ]); // Verde floresta escuro
+
+    // O RIO (Morte instantânea se encostar)
+    add([ rect(4000, 150), pos(0, height() - 50), color(0, 50, 150), area(), "agua", z(50) ]);
 
     const mapa = [
         "                                                                                    ",
+        "                                                                                P   ",
+        "                                                                               ===  ",
+        "                                                 ===                                ",
         "                                                                                    ",
-        "                                                                               P    ",
-        "                                                                              ===   ",
-        "                                           -                                        ",
-        "                                                                $                   ",
-        "                               -                      -       ----                  ",
-        "                     $                                                              ",
-        "                   ----                                                             ",
-        "                                         * ",
-        "          [                 ]          ======                                       ",
-        "       [  |                 |  ]                                                    ",
-        "    [  |  |        * |  |  ]                                                 ",
-        "=================================================     ==============================="
+        "                                         ===                                        ",
+        "                                                                                    ",
+        "                                 >                                                  ",
+        "                                                                                    ",
+        "                    ===                                                             ",
+        "                                                                                    ",
+        "======                                                                              ",
+        "                                                                                    "
     ];
 
-    const config = {
-        tileWidth: 64,
-        tileHeight: 64,
-        pos: vec2(0, height() - (14 * 64)), // Alinha com a parte inferior da tela
+    addLevel(mapa, {
+        tileWidth: 64, tileHeight: 64, pos: vec2(0, height() - (13 * 64)),
         tiles: {
-            // Chão estilo paralelepípedo retrô
-            "=": () => [ rect(64, 64), outline(2, rgb(30,30,30)), color(120, 120, 130), area(), body({ isStatic: true }), z(10) ],
-            
-            // Degraus e Pilastras (Lapa/Santa Teresa vibe)
-            "[": () => [ rect(64, 64), color(180, 170, 160), area(), body({ isStatic: true }), z(10) ],
-            "]": () => [ rect(64, 64), color(180, 170, 160), area(), body({ isStatic: true }), z(10) ],
-            "|": () => [ rect(64, 64), color(150, 140, 130), z(9) ], // Apenas visual, sem física
-            
-            // Plataformas
-            "-": () => [ rect(64, 20), color(200, 100, 50), outline(2), area(), body({ isStatic: true }), z(10) ],
-            
-            // Inimigos (Pequenos quadrados vermelhos que patrulham)
-            "*": () => [ 
-                rect(40, 40), color(255, 50, 50), outline(2), area(), body(), anchor("bot"), "inimigo", z(15),
-                { dir: 1, update() { this.move(100 * this.dir, 0); } } // IA simples: anda pra frente
-            ],
-            
-            // Lembranças
-            "$": () => [ circle(15), color(255, 215, 0), outline(2), area(), "lembranca", z(15) ],
-            
-            // Portal (O embarque para o Amazonas)
-            "P": () => [ rect(80, 120), color(50, 200, 255), outline(2), area(), "portal", z(5) ]
+            "=": () => [ rect(64, 30), color(0, 150, 50), outline(2), area(), body({ isStatic: true }) ], // Vitória Régia
+            ">": () => [ rect(128, 30), color(0, 200, 100), area(), body({ isStatic: true }), plataformaFlutuante(300, 120, 'x') ],
+            "P": () => [ rect(64, 128), color(255, 105, 180), area(), "portal_final" ] // O Presente
         }
-    };
-
-    addLevel(mapa, config);
-
-    // Inverte os inimigos quando batem na parede
-    onCollide("inimigo", "chao", (i, c, col) => { if (col.isLeft() || col.isRight()) i.dir = -i.dir; });
-
-    const player = instanciarJogador(100, 200);
-
-    // HUD Fixo
-    const uiVidas = add([ text(`VIDAS: ${vidas}`, { size: 24 }), pos(20, 20), fixed(), color(255, 50, 50), z(100) ]);
-    const uiPontos = add([ text(`LEMBRANÇAS: ${pontuacao}`, { size: 24 }), pos(20, 60), fixed(), color(255, 215, 0), z(100) ]);
-
-    player.onCollide("lembranca", (l) => {
-        destroy(l);
-        pontuacao += 50;
-        uiPontos.text = `LEMBRANÇAS: ${pontuacao}`;
-        spawnBrilhoLembranca(l.pos);
-        add([ text("+50", {size:20}), pos(l.pos), color(255,255,0), move(UP, 80), lifespan(0.5, {fade: 0.2}) ]);
     });
 
-    player.onCollide("portal", () => {
-        go("vitoria"); // Aqui você pode criar a "fase_amazonia" e redirecionar pra ela depois!
+    const player = criarSofia(100, height() - 300, "fase3_tefe");
+    criarHUD();
+
+    player.onCollide("agua", () => {
+        player.sofrerDano();
+        if(ESTADO_GLOBAL.vidas > 0) go("fase3_tefe");
     });
+
+    player.onCollide("portal_final", () => { go("vitoria"); });
 });
 
-// =========================================================================
-// 5. TELAS DO SISTEMA
-// =========================================================================
+// ============================================================================================
+// 8. CUTSCENES (A História Imersiva)
+// ============================================================================================
+scene("cutscene_1", () => {
+    add([ rect(width(), height()), color(0, 0, 0) ]);
+    add([ text("A primeira mensagem cruzou o país...", { size: 40 }), pos(width()/2, height()/2), anchor("center") ]);
+    wait(3, () => go("fase2_santateresa"));
+});
 
+scene("cutscene_2", () => {
+    add([ rect(width(), height()), color(0, 0, 0) ]);
+    add([ text("E então, o Rio de Janeiro uniu dois caminhos.", { size: 40 }), pos(width()/2, height()/2), anchor("center") ]);
+    wait(3, () => go("fase3_tefe"));
+});
+
+// ============================================================================================
+// 9. TELAS DO SISTEMA (Menu, GameOver e Vitória)
+// ============================================================================================
 scene("menu", () => {
     add([ rect(width(), height()), color(15, 15, 25) ]);
-    add([ text("A JORNADA PARA TEFÉ", { size: 64 }), pos(width()/2, height()/3), anchor("center"), color(255, 100, 150) ]);
-    const btn = add([ text("Pressione ESPAÇO", { size: 30 }), pos(width()/2, height()/1.5), anchor("center") ]);
+    
+    add([ text("A JORNADA DE SOFIA", { size: 70 }), pos(width()/2, height()/3), anchor("center"), color(255, 105, 180) ]);
+    add([ text("SETAS: Move  |  ESPAÇO: Pula  |  Pule nos inimigos", { size: 24 }), pos(width()/2, height()/2), anchor("center"), color(150, 150, 150) ]);
+    
+    const btn = add([ text("Pressione [ESPAÇO] para iniciar", { size: 30 }), pos(width()/2, height()/1.3), anchor("center") ]);
     loop(0.5, () => btn.hidden = !btn.hidden);
-    onKeyPress("space", () => { vidas = 3; pontuacao = 0; go("fase_rio"); });
+    
+    onKeyPress("space", () => {
+        ESTADO_GLOBAL.vidas = 3;
+        ESTADO_GLOBAL.memorias = 0;
+        go("fase1_pelotas");
+    });
 });
 
 scene("gameover", () => {
-    add([ rect(width(), height()), color(50, 10, 10) ]);
-    add([ text("FIM DE JOGO", { size: 80 }), pos(width()/2, height()/3), anchor("center"), color(255, 50, 50) ]);
-    add([ text("Tente novamente. A distância não vai vencer.", { size: 24 }), pos(width()/2, height()/2), anchor("center") ]);
+    add([ rect(width(), height()), color(50, 0, 0) ]);
+    add([ text("FIM DA JORNADA", { size: 80 }), pos(width()/2, height()/3), anchor("center"), color(255, 50, 50) ]);
+    add([ text("A distância não pode vencer. Tente de novo.", { size: 30 }), pos(width()/2, height()/2), anchor("center") ]);
+    add([ text("Pressione ESPAÇO", { size: 24 }), pos(width()/2, height()/1.3), anchor("center") ]);
     onKeyPress("space", () => go("menu"));
 });
 
 scene("vitoria", () => {
     add([ rect(width(), height()), color(10, 50, 20) ]);
-    add([ text("CHEGAMOS EM TEFÉ!", { size: 80 }), pos(width()/2, height()/3), anchor("center"), color(50, 255, 50) ]);
-    add([ text("Feliz Dia dos Namorados, Sofia!", { size: 40 }), pos(width()/2, height()/2), anchor("center"), color(255, 105, 180) ]);
+    
+    // Efeito de confete
+    loop(0.1, () => {
+        add([ rect(10, 10), pos(rand(0, width()), -10), color(rand(100, 255), rand(100, 255), rand(100, 255)), move(DOWN, rand(100, 300)), lifespan(3) ]);
+    });
+
+    add([ text("BEM-VINDA A TEFÉ!", { size: 80 }), pos(width()/2, height()/4), anchor("center"), color(50, 255, 50) ]);
+    add([ text("De Pelotas ao Rio, e agora no Amazonas.", { size: 30 }), pos(width()/2, height()/2), anchor("center"), color(255, 255, 255) ]);
+    add([ text("Feliz Dia dos Namorados, Sofia Eymard!", { size: 50 }), pos(width()/2, height()/1.5), anchor("center"), color(255, 105, 180) ]);
 });
 
-// START
+// ============================================================================================
+// INICIA O MOTOR
+// ============================================================================================
 go("menu");
