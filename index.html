@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Configuração essencial para jogos: impede o zoom duplo e ajusta perfeitamente em celulares -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <title>A Jornada de Sofia: De Norte a Sul</title>
+    
+    <!-- Ícone de coração na aba do navegador -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>❤️</text></svg>">
+    
+    <!-- Importando a folha de estilos -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Importando a fonte 'Press Start 2P' do Google Fonts para estilo retrô -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Contêiner principal onde o Kaboom.js vai renderizar o jogo -->
+    <div id="game-container"></div>
+
+    <!-- Importando o Kaboom.js via CDN (versão estável) -->
+    <script src="https://unpkg.com/kaboom@3000.1.17/dist/kaboom.js"></script>
+    
+    <!-- Importando a lógica do nosso jogo (que terá as fases do Rio e Amazonas) -->
+    <script src="game.js"></script>
+
+</body>
+</html>
