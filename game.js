@@ -10,7 +10,7 @@ kaboom({
 // 1. CARREGAMENTO DE IMAGENS (ASSETS)
 // ==========================================================
 // Quando tiver suas imagens na pasta "assets", descomente (tire as //) destas linhas:
-// loadSprite("sofia", "assets/sofia.png");
+// loadSprite("sofia", "assets/sofia.jpeg");
 // loadSprite("chao_cidade", "assets/chao_cidade.png");
 // loadSprite("chao_pedra", "assets/chao_pedra.png");
 // loadSprite("chao_selva", "assets/chao_selva.png");
