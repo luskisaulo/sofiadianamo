@@ -1,70 +1,137 @@
+// Inicialização profissional com Letterbox (adapta a qualquer tela sem distorcer)
 kaboom({
     root: document.getElementById("game-container"),
-    width: 800,
-    height: 600,
-    background: [20, 20, 40], // Fundo noturno padrão
+    width: 1024,
+    height: 576,
+    letterbox: true,
+    background: [15, 15, 25],
 });
 
 // ==========================================================
-// 1. CARREGAMENTO DE IMAGENS PROFISSIONAIS (ASSETS)
+// 1. CARREGAMENTO DE ASSETS (O "Preload")
 // ==========================================================
-// Cenários das 3 fases
-loadSprite("fundo_pelotas", "assets/fundo_pelotas.jpg").catch(() => {}); 
-loadSprite("fundo_rio", "assets/fundo_rio.jpeg");
-loadSprite("fundo_amazonia", "assets/fundo_amazonia.jpg").catch(() => {});
+// Ajuste os nomes para os arquivos reais que você tem na pasta assets
+loadSprite("fundo_rio", "assets/fundo_rio.jpeg").catch(() => {});
 
-// A folha de animação da Sofia (Sprite Sheet)
-// O código corta a imagem em 4 colunas e 4 linhas
 loadSprite("sofia", "assets/sofia.png", {
     sliceX: 4, 
     sliceY: 4, 
     anims: {
-        idle: { from: 0, to: 0 }, // Parada
-        run: { from: 1, to: 3, loop: true, speed: 12 }, // Correndo (animando os quadros)
-        jump: { from: 8, to: 8 }, // Pulando
+        idle: { from: 0, to: 0 },
+        run: { from: 1, to: 3, loop: true, speed: 12 },
+        jump: { from: 8, to: 8 },
     }
 });
 
-// Ícones temporários para os objetivos usando emojis (para garantir que funcione agora)
-// Depois você pode trocar por loadSprite e imagens reais.
-const OBJETIVO_FASE1 = "📱"; // Sinal de mensagem
-const OBJETIVO_FASE2 = "❤️"; // Coração no Rio
-const OBJETIVO_FASE3 = "🎁"; // O Presente em Tefé
+// ==========================================================
+// 2. CONFIGURAÇÕES GERAIS E FÍSICA
+// ==========================================================
+const GRAVIDADE = 2400;
+const FORCA_PULO = 850;
+const VELOCIDADE = 300;
 
-// Física global
-const VELOCIDADE = 280;
-const FORCA_PULO = 700;
-const GRAVIDADE = 1800;
+// AJUSTE ISSO: Se a Sofia ficar gigante, mude para 0.5, 0.3, 0.1...
+const ESCALA_SOFIA = 0.5; 
+
+setGravity(GRAVIDADE);
 
 // ==========================================================
-// FUNÇÃO REUTILIZÁVEL: CONTROLES E CÂMERA DA SOFIA
+// 3. EFEITOS ESPECIAIS (GAME JUICE)
 // ==========================================================
-// Como as 3 fases usam a mesma personagem, centralizamos a lógica aqui
-function criarSofia(posX, posY, nomeCenaAtual) {
+// Função para criar fumaça/poeira no chão quando pula ou corre
+function criarPoeira(posicao) {
+    add([
+        rect(8, 8),
+        pos(posicao.x, posicao.y),
+        color(200, 200, 200),
+        opacity(0.8),
+        move(LEFT, rand(10, 50)),
+        lifespan(0.3, { fade: 0.1 }),
+        z(15)
+    ]);
+}
+
+// ==========================================================
+// 4. MENU PRINCIPAL (A porta de entrada)
+// ==========================================================
+scene("menu", () => {
+    // Efeito de fundo pulsante
+    add([
+        rect(width(), height()),
+        color(30, 10, 40),
+        z(0)
+    ]);
+
+    // Título do Jogo
+    add([
+        text("A JORNADA DE SOFIA", { size: 64, font: "monospace" }),
+        pos(width() / 2, height() / 3),
+        anchor("center"),
+        color(255, 215, 0),
+    ]);
+
+    // Botão Jogar piscando
+    const btnJogar = add([
+        text("Pressione [ESPAÇO] para Entrar", { size: 24 }),
+        pos(width() / 2, height() / 1.5),
+        anchor("center"),
+        color(255, 255, 255),
+    ]);
+
+    loop(0.8, () => {
+        btnJogar.hidden = !btnJogar.hidden;
+    });
+
+    onKeyPress("space", () => {
+        // Transição suave
+        add([
+            rect(width(), height()),
+            color(0, 0, 0),
+            opacity(0),
+            lifespan(1, { fade: 1 }),
+            z(100)
+        ]);
+        wait(1, () => go("fase_rio"));
+    });
+});
+
+// ==========================================================
+// 5. O CONTROLADOR DO JOGADOR (Lógica encapsulada)
+// ==========================================================
+function spawnPlayer(posX, posY) {
     const player = add([
         sprite("sofia"),
         pos(posX, posY),
-        scale(1.5), 
-        // Área de colisão ajustada para o corpo dela (ignorando espaços vazios da imagem)
-        area({ shape: new Rect(vec2(0, 0), 30, 50) }), 
+        scale(ESCALA_SOFIA),
+        // anchor("bot") é O SEGREDO: O ponto (x,y) dela passa a ser os PÉS, não o meio do peito.
+        // Isso resolve o problema dela afundar no chão.
+        anchor("bot"), 
+        // Área de colisão dinâmica, alinhada com os pés
+        area({ offset: vec2(0, 0), shape: new Rect(vec2(0, -60), 40, 60) }),
         body(),
-        z(10), // Garante que ela fique na frente de todos os fundos
+        z(20),
         "jogador"
     ]);
 
     player.play("idle");
 
-    // Movimentação fluida e acionamento das animações
+    // Máquina de estados da animação e movimento
     onKeyDown("right", () => {
         player.move(VELOCIDADE, 0);
         player.flipX = false;
-        if (player.isGrounded() && player.curAnim() !== "run") player.play("run");
+        if (player.isGrounded()) {
+            if (player.curAnim() !== "run") player.play("run");
+            if (chance(0.2)) criarPoeira(player.pos); // Efeito de poeira aleatório
+        }
     });
 
     onKeyDown("left", () => {
         player.move(-VELOCIDADE, 0);
         player.flipX = true;
-        if (player.isGrounded() && player.curAnim() !== "run") player.play("run");
+        if (player.isGrounded()) {
+            if (player.curAnim() !== "run") player.play("run");
+            if (chance(0.2)) criarPoeira(player.pos);
+        }
     });
 
     onKeyRelease(["left", "right"], () => {
@@ -75,10 +142,14 @@ function criarSofia(posX, posY, nomeCenaAtual) {
         if (player.isGrounded()) {
             player.jump(FORCA_PULO);
             player.play("jump");
+            criarPoeira(player.pos);
+            criarPoeira(vec2(player.pos.x - 10, player.pos.y));
+            criarPoeira(vec2(player.pos.x + 10, player.pos.y));
         }
     });
 
     player.onGround(() => {
+        criarPoeira(player.pos); // Impacto ao cair
         if (!isKeyDown("left") && !isKeyDown("right")) {
             player.play("idle");
         } else {
@@ -86,199 +157,114 @@ function criarSofia(posX, posY, nomeCenaAtual) {
         }
     });
 
-    // Câmera dinâmica e morte ao cair em buracos
+    // Câmera Profissional (Segue com atraso/suavidade)
     player.onUpdate(() => {
-        camPos(player.pos.x + 150, height() / 2); // Câmera levemente adiantada
-        if (player.pos.y > 900) {
-            shake(15); // Trepidação na tela
-            go(nomeCenaAtual); // Reinicia a fase atual
+        let camX = player.pos.x + 200;
+        // Evita que a câmera mostre o "nada" à esquerda do mapa
+        if (camX < width() / 2) camX = width() / 2; 
+        camPos(camX, height() / 2);
+
+        // Sistema de morte e respawn
+        if (player.pos.y > height() + 200) {
+            shake(12);
+            go("fase_rio"); 
         }
     });
 
     return player;
 }
 
-
 // ==========================================================
-// FASE 1: O INÍCIO (7 de Setembro de 2024 - Pelotas/RJ)
+// 6. FASE 1: SANTA TERESA (Imersão Total)
 // ==========================================================
-scene("fase1", () => {
-    setGravity(GRAVIDADE);
-    setBackground(135, 206, 235); // Azul céu como base
+scene("fase_rio", () => {
+    let memoriasColetadas = 0;
+    const TOTAL_MEMORIAS = 3;
 
-    // Se você adicionar o fundo_pelotas.jpg, ele usa. Se não, fica o fundo azul.
-    try {
-        add([
-            sprite("fundo_pelotas", { width: 1600, height: 600 }),
-            pos(0, 0), z(0)
-        ]);
-    } catch(e) {}
-
-    // Textos imersivos
-    add([ text("7 de Set. 2024", { size: 24 }), pos(20, 20), fixed(), color(0,0,0), z(100) ]);
-    add([ text("A primeira mensagem...", { size: 16 }), pos(20, 50), fixed(), color(50,50,50), z(100) ]);
-
-    // O Nível (Chão e buracos)
-    add([ rect(600, 50), pos(0, 500), area(), body({ isStatic: true }), color(80, 80, 80) ]);
-    add([ rect(400, 50), pos(750, 500), area(), body({ isStatic: true }), color(80, 80, 80) ]);
-    add([ rect(300, 50), pos(1300, 400), area(), body({ isStatic: true }), color(80, 80, 80) ]);
-
-    // O Objetivo da Fase
+    // Fundo Parallax (Fica fixo e preenche a tela)
     add([
-        text(OBJETIVO_FASE1, { size: 40 }),
-        pos(1450, 320),
-        area(),
-        "objetivo",
-        z(5)
-    ]);
-
-    const player = criarSofia(50, 300, "fase1");
-
-    // Lógica para avançar para Santa Teresa
-    player.onCollide("objetivo", () => {
-        go("fase2");
-    });
-});
-
-
-// ==========================================================
-// FASE 2: O ENCONTRO (23 de Março - Santa Teresa, RJ)
-// ==========================================================
-scene("fase2", () => {
-    setGravity(GRAVIDADE);
-
-    // EFEITO PARALLAX IMERSIVO COM A SUA ARTE
-    // A imagem foi esticada para a direita para criar um corredor
-    add([
-        sprite("fundo_rio", { width: 1600, height: 600 }),
+        sprite("fundo_rio", { width: 2000, height: height() }),
         pos(0, 0),
         z(0)
     ]);
 
-    add([ text("23 de Marco", { size: 24 }), pos(20, 20), fixed(), color(255,255,255), z(100) ]);
-    add([ text("Onde tudo se tornou real.", { size: 16 }), pos(20, 50), fixed(), color(200,200,200), z(100) ]);
-
-    // CHÃO INVISÍVEL
-    // Criamos plataformas invisíveis (opacity: 0) que se alinham com a rua do seu desenho
-    add([ rect(800, 50), pos(0, 500), area(), body({ isStatic: true }), opacity(0) ]);
-    
-    // Plataformas simulando os degraus e ladeiras de Santa Teresa
-    add([ rect(200, 20), pos(850, 420), area(), body({ isStatic: true }), opacity(0) ]);
-    add([ rect(400, 50), pos(1100, 500), area(), body({ isStatic: true }), opacity(0) ]);
-
-    // O Objetivo (O Encontro)
+    // O Chão Perfeito (Invisível para não estragar a arte, mas físico para pisar)
+    // Ajuste o pos.y para alinhar perfeitamente com a calçada da sua imagem
     add([
-        text(OBJETIVO_FASE2, { size: 40 }),
-        pos(1400, 420),
+        rect(3000, 100),
+        pos(0, height() - 50), 
         area(),
-        "objetivo",
-        z(5)
+        body({ isStatic: true }),
+        opacity(0), // Coloque 0.5 aqui se precisar "ver" o chão invisível para debugar
+        "chao"
     ]);
 
-    const player = criarSofia(50, 300, "fase2");
+    // Obstáculos/Plataformas (Use para criar os degraus da ladeira)
+    add([ rect(200, 40), pos(600, height() - 150), area(), body({ isStatic: true }), opacity(0) ]);
+    add([ rect(200, 40), pos(1000, height() - 250), area(), body({ isStatic: true }), opacity(0) ]);
 
-    player.onCollide("objetivo", () => {
-        go("fase3");
-    });
-});
+    const player = spawnPlayer(100, height() - 150);
 
-
-// ==========================================================
-// FASE 3: O PRESENTE (Tefé, Amazonas)
-// ==========================================================
-scene("fase3", () => {
-    setGravity(GRAVIDADE);
-    setBackground(34, 139, 34); // Fundo verde floresta como base
-
-    try {
+    // Sistema de Coletáveis (Memórias do casal)
+    function criarMemoria(x, y) {
         add([
-            sprite("fundo_amazonia", { width: 2000, height: 600 }),
-            pos(0, 0), z(0)
+            circle(15), color(255, 50, 150),
+            pos(x, y), area(), "memoria", z(10)
         ]);
-    } catch(e) {}
+    }
 
-    add([ text("Hoje em Tefe, AM", { size: 24 }), pos(20, 20), fixed(), color(255,255,255), z(100) ]);
-    add([ text("A ultima aventura ate voce.", { size: 16 }), pos(20, 50), fixed(), color(200,200,200), z(100) ]);
+    criarMemoria(650, height() - 200);
+    criarMemoria(1050, height() - 300);
+    criarMemoria(1500, height() - 100);
 
-    // Desafio de plataformas (Vitória-Régias flutuantes)
-    add([ rect(300, 30), pos(0, 500), area(), body({ isStatic: true }), color(0, 100, 0) ]);
-    add([ rect(150, 30), pos(450, 450), area(), body({ isStatic: true }), color(0, 100, 0) ]);
-    add([ rect(150, 30), pos(750, 350), area(), body({ isStatic: true }), color(0, 100, 0) ]);
-    add([ rect(100, 30), pos(1050, 250), area(), body({ isStatic: true }), color(0, 100, 0) ]);
-    add([ rect(400, 30), pos(1350, 450), area(), body({ isStatic: true }), color(0, 100, 0) ]);
-
-    // O Rio Solimões (Morte se cair)
-    add([
-        rect(2000, 100),
-        pos(0, 550),
-        area(),
-        color(0, 0, 139), // Azul escuro
-        "agua",
-        z(8)
+    // O Portal do Fim da Fase (Só abre se pegar tudo)
+    const portal = add([
+        rect(50, 150), pos(2000, height() - 200), area(), color(0, 255, 0), opacity(0.5), "portal"
     ]);
 
-    // O Presente Final / Você
-    add([
-        text(OBJETIVO_FASE3, { size: 50 }),
-        pos(1600, 360),
-        area(),
-        "vitoria_final",
-        z(5)
+    // UI (HUD) - Fixo na tela
+    const uiLembrancas = add([
+        text("Lembranças: 0/3", { size: 24 }),
+        pos(20, 20), fixed(), color(255, 255, 255), z(100)
     ]);
 
-    const player = criarSofia(50, 300, "fase3");
-
-    player.onCollide("agua", () => {
-        shake(15);
-        go("fase3");
+    player.onCollide("memoria", (m) => {
+        destroy(m);
+        memoriasColetadas++;
+        uiLembrancas.text = `Lembranças: ${memoriasColetadas}/${TOTAL_MEMORIAS}`;
+        // Efeito visual ao pegar
+        add([
+            text("+1", { size: 30 }), pos(player.pos.x, player.pos.y - 50),
+            color(255, 255, 0), move(UP, 100), lifespan(1, { fade: 0.5 })
+        ]);
     });
 
-    player.onCollide("vitoria_final", () => {
-        go("vitoria");
+    player.onCollide("portal", () => {
+        if (memoriasColetadas >= TOTAL_MEMORIAS) {
+            go("vitoria");
+        } else {
+            // Efeito de erro ("faltam memorias")
+            shake(5);
+        }
     });
 });
 
-
 // ==========================================================
-// TELA FINAL: A RECOMPENSA E DECLARAÇÃO
+// 7. TELA DE VITÓRIA (O Fim Comercial)
 // ==========================================================
 scene("vitoria", () => {
-    setBackground(20, 10, 30);
-
-    // Efeito de confetes caindo
-    loop(0.1, () => {
-        add([
-            rect(10, 10),
-            pos(rand(0, width()), -10),
-            color(rand(100, 255), rand(100, 255), rand(100, 255)),
-            move(DOWN, rand(100, 300)),
-            lifespan(3) // Some depois de 3 segundos
-        ]);
-    });
+    add([ rect(width(), height()), color(10, 5, 20), z(0) ]);
 
     add([
-        text("Você chegou!", { size: 40, align: "center" }),
-        pos(width() / 2, height() / 2 - 120),
-        anchor("center"),
-        color(255, 215, 0)
+        text("A JORNADA FOI CONCLUÍDA.", { size: 48 }),
+        pos(width() / 2, height() / 3), anchor("center"), color(255, 215, 0)
     ]);
 
     add([
-        text("Feliz Dia dos Namorados,\nSofia Eymard!", { size: 30, align: "center" }),
-        pos(width() / 2, height() / 2 - 40),
-        anchor("center"),
-        color(255, 105, 180)
-    ]);
-
-    add([
-        text("De Pelotas ao Rio, e agora em Tefe.\nA distancia nunca foi um obstaculo,\nfoi apenas o cenario da nossa aventura.", { size: 16, align: "center", width: 700 }),
-        pos(width() / 2, height() / 2 + 80),
-        anchor("center"),
-        color(255, 255, 255)
+        text("De Pelotas ao Rio, e agora em Tefé.\n\nFeliz Dia dos Namorados, Sofia Eymard!", { size: 24, align: "center" }),
+        pos(width() / 2, height() / 1.5), anchor("center"), color(255, 255, 255)
     ]);
 });
 
-// ==========================================================
-// START
-// ==========================================================
-go("fase1");
+// Inicia o motor na tela de menu
+go("menu");
