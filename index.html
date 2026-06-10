@@ -3,395 +3,332 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A Jornada de Sofia</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/kaboom/3000.1.17/kaboom.min.js"></script>
+<title>A Jornada de Sofia — 3D</title>
+
+<!-- Three.js via importmap — funciona no Netlify sem CSP inline -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:ital,wght@0,300;0,600;1,300&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Exo+2:wght@300;600&display=swap');
 
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --pink:  #ff3fa4;
+  --cyan:  #00f5ff;
+  --gold:  #ffd700;
+  --red:   #ff2244;
+  --dark:  #07090f;
+  --glass: rgba(7,9,15,0.72);
+}
+html, body {
+  width:100%; height:100%;
+  background:var(--dark);
+  overflow:hidden;
+  font-family:'Exo 2', sans-serif;
+}
+canvas { display:block; width:100%!important; height:100%!important; }
 
-  :root {
-    --pink:    #ff3fa4;
-    --cyan:    #00f5ff;
-    --gold:    #ffd700;
-    --red:     #ff2244;
-    --dark:    #07090f;
-    --panel:   rgba(0,0,0,0.72);
-    --glow-pink: 0 0 18px #ff3fa4, 0 0 40px #ff3fa4aa;
-    --glow-cyan: 0 0 18px #00f5ff, 0 0 40px #00f5ffaa;
-  }
+/* ── HUD ──────────────────────────────────────────── */
+#hud {
+  position:fixed; inset:0; pointer-events:none; z-index:10;
+}
+/* top-left: lives + power */
+#hud-left {
+  position:absolute; top:18px; left:20px;
+  background:var(--glass); border:1px solid #ffffff14;
+  border-radius:12px; padding:10px 16px;
+  backdrop-filter:blur(14px);
+}
+.hud-lbl {
+  font-family:'Orbitron',monospace; font-size:8px;
+  letter-spacing:3px; color:#ffffff40; text-transform:uppercase;
+}
+#hearts { display:flex; gap:5px; margin:4px 0 8px; }
+.heart {
+  font-size:18px;
+  filter:drop-shadow(0 0 5px var(--pink));
+  transition:opacity .2s, transform .2s;
+}
+.heart.off { opacity:.15; filter:none; transform:scale(.85); }
+.bar-row { display:flex; align-items:center; gap:8px; }
+.bar-track {
+  width:130px; height:5px;
+  background:#ffffff14; border-radius:5px; overflow:hidden;
+}
+.bar-fill {
+  height:100%; width:0%;
+  border-radius:5px; transition:width .25s;
+}
+#pbar-fill { background:linear-gradient(90deg,var(--pink),var(--gold)); box-shadow:0 0 8px var(--pink); }
+/* top-center: phase + score */
+#hud-center {
+  position:absolute; top:18px; left:50%; transform:translateX(-50%);
+  background:var(--glass); border:1px solid #ffffff14;
+  border-radius:12px; padding:10px 20px; text-align:center;
+  backdrop-filter:blur(14px);
+}
+#hud-phase {
+  font-family:'Orbitron',monospace; font-size:15px; font-weight:700;
+  color:var(--cyan); text-shadow:0 0 12px var(--cyan);
+}
+#hud-score {
+  font-family:'Orbitron',monospace; font-size:11px;
+  color:var(--gold); margin-top:3px; letter-spacing:2px;
+}
+/* top-right: gems */
+#hud-right {
+  position:absolute; top:18px; right:20px;
+  background:var(--glass); border:1px solid #ffffff14;
+  border-radius:12px; padding:10px 16px; text-align:right;
+  backdrop-filter:blur(14px);
+}
+#hud-gems {
+  font-family:'Orbitron',monospace; font-size:20px; font-weight:700;
+  color:var(--gold); text-shadow:0 0 10px var(--gold);
+}
+/* bottom-right: skills */
+#hud-skills {
+  position:absolute; bottom:22px; right:20px;
+  display:flex; flex-direction:column; align-items:flex-end; gap:7px;
+}
+.skill-pill {
+  background:var(--glass); border:1px solid #ffffff12;
+  border-radius:50px; padding:6px 14px;
+  display:flex; align-items:center; gap:9px;
+  backdrop-filter:blur(8px);
+  font-family:'Orbitron',monospace; font-size:9px; letter-spacing:1px; color:#fff9;
+  transition:border-color .3s, box-shadow .3s;
+}
+.skill-pill.ready { border-color:var(--pink); box-shadow:0 0 10px #ff3fa455; }
+.skill-key {
+  width:24px; height:24px; border-radius:6px;
+  background:#ffffff16; border:1px solid #ffffff28;
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-family:'Orbitron',monospace; color:#fff;
+  transition:background .2s, border-color .2s;
+}
+.skill-key.active { background:var(--pink); border-color:var(--pink); box-shadow:0 0 8px var(--pink); }
+/* bottom-left: controls hint */
+#controls-hint {
+  position:absolute; bottom:22px; left:20px;
+  background:var(--glass); border:1px solid #ffffff10;
+  border-radius:10px; padding:9px 14px;
+  backdrop-filter:blur(8px);
+  font-size:11px; color:#ffffff44; line-height:1.8;
+  font-family:'Exo 2',sans-serif;
+}
 
-  html, body {
-    width: 100%; height: 100%;
-    background: var(--dark);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Exo 2', sans-serif;
-    overflow: hidden;
-  }
+/* ── BOSS BAR ─────────────────────────────────────── */
+#boss-wrap {
+  position:absolute; bottom:62px; left:50%; transform:translateX(-50%);
+  width:min(560px,76vw); opacity:0; transition:opacity .5s;
+}
+#boss-wrap.show { opacity:1; }
+#boss-lbl {
+  font-family:'Orbitron',monospace; font-size:10px; letter-spacing:4px;
+  color:var(--red); text-shadow:0 0 8px var(--red);
+  text-align:center; margin-bottom:5px;
+}
+.boss-track { height:9px; background:#ffffff10; border-radius:9px; overflow:hidden; border:1px solid #ff224428; }
+#boss-fill { height:100%; width:100%; background:linear-gradient(90deg,var(--red),#ff8800); border-radius:9px; box-shadow:0 0 8px var(--red); transition:width .35s; }
 
-  /* ── LOADING SCREEN ─────────────────────────────── */
-  #loading-screen {
-    position: fixed; inset: 0;
-    background: var(--dark);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    z-index: 9999;
-    transition: opacity 0.6s ease;
-  }
-  #loading-screen.hidden { opacity: 0; pointer-events: none; }
+/* ── COMBO POPUP ──────────────────────────────────── */
+#combo {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%) scale(0);
+  font-family:'Orbitron',monospace; font-size:52px; font-weight:900;
+  color:var(--gold); text-shadow:0 0 30px var(--gold);
+  pointer-events:none; opacity:0; white-space:nowrap;
+  transition:transform .14s cubic-bezier(.4,2,.6,1), opacity .4s;
+}
+#combo.show { transform:translate(-50%,-50%) scale(1); opacity:1; }
 
-  .load-title {
-    font-family: 'Orbitron', sans-serif;
-    font-size: clamp(28px, 5vw, 56px);
-    font-weight: 900;
-    color: var(--pink);
-    text-shadow: var(--glow-pink);
-    letter-spacing: 4px;
-    animation: pulse-title 1.4s ease-in-out infinite alternate;
-  }
-  .load-sub {
-    color: #ffffff88;
-    font-size: 14px;
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    margin-top: 10px;
-    font-weight: 300;
-  }
-  .load-bar-wrap {
-    margin-top: 48px;
-    width: min(400px, 80vw);
-    height: 4px;
-    background: #ffffff18;
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .load-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--pink), var(--cyan));
-    border-radius: 4px;
-    transition: width 0.3s ease;
-    box-shadow: 0 0 12px var(--cyan);
-  }
-  .load-status {
-    margin-top: 14px;
-    color: #ffffff44;
-    font-size: 11px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    height: 16px;
-  }
+/* ── PHASE BANNER ─────────────────────────────────── */
+#phase-banner {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  text-align:center; opacity:0;
+  transition:opacity .4s; pointer-events:none;
+}
+#phase-banner.show { opacity:1; }
+#pb-eyebrow {
+  font-family:'Orbitron',monospace; font-size:10px; letter-spacing:8px;
+  color:var(--cyan); text-shadow:0 0 12px var(--cyan);
+  text-transform:uppercase;
+}
+.pb-line { width:100px; height:2px; background:linear-gradient(90deg,transparent,var(--cyan),transparent); margin:8px auto; }
+#pb-title {
+  font-family:'Orbitron',monospace; font-size:clamp(28px,5vw,48px);
+  font-weight:900; color:#fff; text-shadow:0 0 20px #ffffff55;
+}
 
-  @keyframes pulse-title {
-    from { text-shadow: 0 0 10px #ff3fa4; }
-    to   { text-shadow: 0 0 30px #ff3fa4, 0 0 60px #ff3fa4aa; }
-  }
+/* ── VIGNETTE ─────────────────────────────────────── */
+#vignette {
+  position:fixed; inset:0; pointer-events:none; z-index:6;
+  background:radial-gradient(ellipse at center,transparent 60%,#00000088 100%);
+}
+#vignette.damage {
+  background:radial-gradient(ellipse at center,transparent 40%,#ff000060 100%);
+  animation:dmg .4s ease forwards;
+}
+@keyframes dmg { 0%{opacity:0}30%{opacity:1}100%{opacity:0} }
 
-  /* ── GAME CONTAINER ─────────────────────────────── */
-  #game-container {
-    position: relative;
-    width: 1280px; height: 720px;
-    max-width: 100vw;
-    max-height: calc(100vw * 0.5625);
-  }
-  #game-container canvas {
-    width: 100% !important;
-    height: 100% !important;
-    display: block;
-  }
+/* ── LOADING ──────────────────────────────────────── */
+#loading {
+  position:fixed; inset:0;
+  background:var(--dark);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  z-index:9999; transition:opacity .6s;
+}
+#loading.hide { opacity:0; pointer-events:none; }
+.load-title {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(22px,5vw,52px); font-weight:900;
+  color:var(--pink); text-shadow:0 0 22px var(--pink); letter-spacing:4px;
+}
+.load-sub { color:#ffffff44; font-size:13px; letter-spacing:5px; text-transform:uppercase; margin-top:8px; }
+.load-bar-wrap { margin-top:44px; width:min(360px,76vw); height:4px; background:#ffffff14; border-radius:4px; overflow:hidden; }
+.load-bar-fill { height:100%; width:0%; background:linear-gradient(90deg,var(--pink),var(--cyan)); border-radius:4px; box-shadow:0 0 10px var(--cyan); transition:width .25s; }
+.load-status { margin-top:12px; color:#ffffff33; font-size:11px; letter-spacing:3px; text-transform:uppercase; }
 
-  /* ── HUD OVERLAY ────────────────────────────────── */
-  #hud {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    padding: 18px 24px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    pointer-events: none;
-    z-index: 10;
-  }
-  .hud-block {
-    background: var(--panel);
-    border: 1px solid #ffffff15;
-    border-radius: 10px;
-    padding: 10px 18px;
-    backdrop-filter: blur(12px);
-  }
-  .hud-label {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 9px;
-    letter-spacing: 3px;
-    color: #ffffff44;
-    text-transform: uppercase;
-  }
-  .hud-value {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 20px;
-    font-weight: 700;
-    margin-top: 2px;
-  }
-  .hud-value.pink { color: var(--pink); text-shadow: var(--glow-pink); }
-  .hud-value.cyan { color: var(--cyan); text-shadow: var(--glow-cyan); }
-  .hud-value.gold { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
+/* ── MENU OVERLAY ─────────────────────────────────── */
+#menu-overlay {
+  position:fixed; inset:0; z-index:20;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  background:linear-gradient(180deg,rgba(7,9,15,0.92),rgba(7,9,15,0.96));
+  transition:opacity .5s;
+}
+#menu-overlay.hide { opacity:0; pointer-events:none; }
+.menu-title {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(28px,6vw,72px); font-weight:900;
+  color:var(--pink); text-shadow:0 0 30px var(--pink), 0 0 60px #ff3fa466;
+  letter-spacing:3px; text-align:center;
+  animation:pulse-title 1.6s ease-in-out infinite alternate;
+}
+@keyframes pulse-title { from{text-shadow:0 0 14px var(--pink);} to{text-shadow:0 0 36px var(--pink),0 0 70px #ff3fa466;} }
+.menu-sub { color:#9080a8; font-size:17px; margin-top:10px; letter-spacing:1px; }
+.menu-divider { width:160px; height:1px; background:linear-gradient(90deg,transparent,var(--pink),transparent); margin:28px auto; }
+.menu-ctrls { color:#6070a0; font-size:14px; line-height:2.2; text-align:center; }
+.menu-ctrls b { color:#a0b0d0; }
+.menu-start {
+  margin-top:36px;
+  font-family:'Orbitron',monospace; font-size:20px;
+  color:#fff; text-shadow:0 0 14px #fff8;
+  animation:blink-btn 1.1s ease-in-out infinite alternate;
+}
+@keyframes blink-btn { from{opacity:1;} to{opacity:0.15;} }
 
-  #hud-lives-icons { display: flex; gap: 6px; margin-top: 4px; }
-  .heart {
-    font-size: 18px;
-    filter: drop-shadow(0 0 6px var(--pink));
-    transition: transform 0.2s, opacity 0.2s;
-  }
-  .heart.empty { opacity: 0.2; filter: none; }
-
-  /* power meter */
-  #power-bar-wrap {
-    width: 160px;
-    height: 6px;
-    background: #ffffff15;
-    border-radius: 6px;
-    overflow: hidden;
-    margin-top: 6px;
-  }
-  #power-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--pink), var(--gold));
-    border-radius: 6px;
-    box-shadow: 0 0 8px var(--pink);
-    transition: width 0.25s ease;
-  }
-
-  /* ── POWER FLASH ────────────────────────────────── */
-  #flash {
-    position: absolute; inset: 0;
-    pointer-events: none; z-index: 20;
-    border-radius: 0;
-    opacity: 0;
-    background: radial-gradient(ellipse at center, #ff3fa455 0%, transparent 70%);
-    transition: opacity 0.08s;
-  }
-  #flash.active { opacity: 1; }
-
-  /* ── COMBO POPUP ────────────────────────────────── */
-  #combo-popup {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%) scale(0);
-    font-family: 'Orbitron', sans-serif;
-    font-size: clamp(32px, 5vw, 56px);
-    font-weight: 900;
-    color: var(--gold);
-    text-shadow: 0 0 30px var(--gold), 0 0 60px #ffd70066;
-    pointer-events: none;
-    z-index: 30;
-    transition: transform 0.15s cubic-bezier(.4,2,.6,1), opacity 0.4s ease;
-    opacity: 0;
-    white-space: nowrap;
-  }
-  #combo-popup.show {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 1;
-  }
-
-  /* ── SKILL INDICATOR ────────────────────────────── */
-  #skill-indicator {
-    position: absolute;
-    bottom: 24px; right: 24px;
-    display: flex; flex-direction: column; align-items: flex-end;
-    gap: 8px;
-    pointer-events: none; z-index: 10;
-  }
-  .skill-pill {
-    background: var(--panel);
-    border: 1px solid #ffffff15;
-    border-radius: 50px;
-    padding: 7px 16px;
-    display: flex; align-items: center; gap: 10px;
-    backdrop-filter: blur(8px);
-    transition: border-color 0.3s, box-shadow 0.3s;
-    font-size: 13px;
-    color: #ffffffcc;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 10px;
-    letter-spacing: 1px;
-  }
-  .skill-pill.ready {
-    border-color: var(--pink);
-    box-shadow: 0 0 12px #ff3fa466;
-  }
-  .skill-key {
-    width: 26px; height: 26px;
-    border-radius: 6px;
-    background: #ffffff18;
-    border: 1px solid #ffffff30;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px;
-    font-family: 'Orbitron', sans-serif;
-    color: #fff;
-  }
-  .skill-key.active {
-    background: var(--pink);
-    border-color: var(--pink);
-    box-shadow: 0 0 10px var(--pink);
-  }
-
-  /* ── VIGNETTE ───────────────────────────────────── */
-  #vignette {
-    position: absolute; inset: 0;
-    pointer-events: none; z-index: 5;
-    background: radial-gradient(ellipse at center, transparent 60%, #00000088 100%);
-  }
-  #vignette.damaged {
-    background: radial-gradient(ellipse at center, transparent 40%, #ff000055 100%);
-    animation: damage-pulse 0.4s ease forwards;
-  }
-  @keyframes damage-pulse {
-    0%   { opacity: 0; }
-    30%  { opacity: 1; }
-    100% { opacity: 0; }
-  }
-
-  /* ── BOSS BAR ───────────────────────────────────── */
-  #boss-bar-container {
-    position: absolute;
-    bottom: 60px; left: 50%; transform: translateX(-50%);
-    width: min(600px, 80vw);
-    pointer-events: none; z-index: 10;
-    opacity: 0;
-    transition: opacity 0.5s;
-  }
-  #boss-bar-container.visible { opacity: 1; }
-  .boss-name {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 11px;
-    letter-spacing: 4px;
-    color: var(--red);
-    text-transform: uppercase;
-    text-align: center;
-    margin-bottom: 6px;
-    text-shadow: 0 0 10px var(--red);
-  }
-  .boss-bar-bg {
-    height: 10px;
-    background: #ffffff15;
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid #ff224433;
-  }
-  #boss-bar-fill {
-    height: 100%;
-    width: 100%;
-    background: linear-gradient(90deg, var(--red), #ff8800);
-    border-radius: 10px;
-    box-shadow: 0 0 10px var(--red);
-    transition: width 0.4s ease;
-  }
-
-  /* ── PHASE BANNER ───────────────────────────────── */
-  #phase-banner {
-    position: absolute;
-    top: 50%; left: 50%; transform: translate(-50%, -50%);
-    text-align: center;
-    pointer-events: none; z-index: 25;
-    opacity: 0;
-    transition: opacity 0.4s;
-  }
-  #phase-banner.show { opacity: 1; }
-  #phase-banner .phase-number {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 11px;
-    letter-spacing: 8px;
-    color: var(--cyan);
-    text-shadow: var(--glow-cyan);
-    text-transform: uppercase;
-  }
-  #phase-banner .phase-title {
-    font-family: 'Orbitron', sans-serif;
-    font-size: clamp(24px, 4vw, 48px);
-    font-weight: 900;
-    color: #fff;
-    margin-top: 4px;
-    text-shadow: 0 0 20px #ffffff66;
-  }
-  .phase-line {
-    width: 120px; height: 2px;
-    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-    margin: 10px auto;
-  }
+/* ── GAMEOVER / VITORIA OVERLAY ───────────────────── */
+#end-overlay {
+  position:fixed; inset:0; z-index:20;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition:opacity .6s;
+}
+#end-overlay.show { opacity:1; pointer-events:all; }
+.end-title { font-family:'Orbitron',monospace; font-size:clamp(28px,5vw,60px); font-weight:900; text-align:center; margin-bottom:12px; }
+.end-sub { font-size:20px; color:#ffffffcc; text-align:center; margin-bottom:6px; }
+.end-score { font-family:'Orbitron',monospace; font-size:28px; color:var(--gold); text-shadow:0 0 10px var(--gold); margin:16px 0; }
+.end-hint { font-family:'Orbitron',monospace; font-size:16px; color:#ffffffaa; animation:blink-btn 1.1s ease-in-out infinite alternate; margin-top:28px; }
 </style>
 </head>
 <body>
 
 <!-- LOADING -->
-<div id="loading-screen">
+<div id="loading">
   <div class="load-title">A JORNADA DE SOFIA</div>
-  <div class="load-sub">Uma história de amor em pixels</div>
-  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
-  <div class="load-status" id="load-status">Inicializando motor…</div>
+  <div class="load-sub">Mundo 3D · Carregando</div>
+  <div class="load-bar-wrap"><div class="load-bar-fill" id="lbar"></div></div>
+  <div class="load-status" id="lstat">Inicializando motor 3D…</div>
 </div>
 
-<!-- GAME WRAPPER -->
-<div id="game-container">
+<!-- MENU -->
+<div id="menu-overlay">
+  <div class="menu-title">A JORNADA DE SOFIA</div>
+  <div class="menu-sub">Uma história de amor em 3D</div>
+  <div class="menu-divider"></div>
+  <div class="menu-ctrls">
+    <b>W A S D</b> ou <b>↑ ← ↓ →</b> — Mover<br>
+    <b>ESPAÇO</b> — Pular &nbsp;·&nbsp; <b>SHIFT</b> — Correr<br>
+    <b>X</b> — Pulso de energia <small>(30 poder)</small><br>
+    <b>Z</b> — Escudo <small>(20 poder)</small>
+  </div>
+  <div class="menu-start">[ ESPAÇO ] INICIAR</div>
+</div>
 
-  <!-- HUD overlay (atualizado via JS) -->
-  <div id="hud">
-    <div class="hud-block">
-      <div class="hud-label">Vidas</div>
-      <div id="hud-lives-icons">
-        <span class="heart" id="h1">♥</span>
-        <span class="heart" id="h2">♥</span>
-        <span class="heart" id="h3">♥</span>
-      </div>
+<!-- GAME OVER / VITÓRIA -->
+<div id="end-overlay">
+  <div class="end-title" id="end-title"></div>
+  <div class="end-sub"  id="end-sub"></div>
+  <div class="end-score" id="end-score"></div>
+  <div class="end-hint">[ ESPAÇO ] continuar</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-left">
+    <div class="hud-lbl">Vidas</div>
+    <div id="hearts">
+      <span class="heart" id="h0">♥</span>
+      <span class="heart" id="h1">♥</span>
+      <span class="heart" id="h2">♥</span>
     </div>
-
-    <div class="hud-block" style="text-align:center">
-      <div class="hud-label">Fase</div>
-      <div class="hud-value cyan" id="hud-phase">— — —</div>
-    </div>
-
-    <div class="hud-block" style="text-align:right">
-      <div class="hud-label">Lembranças</div>
-      <div class="hud-value gold" id="hud-mem">0 / 0</div>
-      <div class="hud-label" style="margin-top:8px">Poder</div>
-      <div id="power-bar-wrap"><div id="power-bar"></div></div>
+    <div class="hud-lbl">Poder</div>
+    <div class="bar-row" style="margin-top:4px">
+      <div class="bar-track"><div class="bar-fill" id="pbar-fill"></div></div>
+      <span id="pbar-val" style="font-family:'Orbitron',monospace;font-size:9px;color:var(--pink)">0</span>
     </div>
   </div>
 
-  <!-- Effects -->
-  <div id="vignette"></div>
-  <div id="flash"></div>
-
-  <!-- Combo popup -->
-  <div id="combo-popup">COMBO!</div>
-
-  <!-- Skill pills (bottom-right) -->
-  <div id="skill-indicator">
-    <div class="skill-pill" id="skill-x">
-      <div class="skill-key" id="key-x">X</div>
-      <span>PULSO DE ENERGIA</span>
-    </div>
-    <div class="skill-pill" id="skill-z">
-      <div class="skill-key" id="key-z">Z</div>
-      <span>ESCUDO</span>
-    </div>
+  <div id="hud-center">
+    <div class="hud-lbl">Fase</div>
+    <div id="hud-phase">— — —</div>
+    <div id="hud-score">0 pts</div>
   </div>
 
-  <!-- Boss HP bar -->
-  <div id="boss-bar-container">
-    <div class="boss-name" id="boss-name-label">GUARDIÃO DAS SOMBRAS</div>
-    <div class="boss-bar-bg"><div id="boss-bar-fill"></div></div>
+  <div id="hud-right">
+    <div class="hud-lbl">Lembranças</div>
+    <div id="hud-gems">0 / 0</div>
   </div>
 
-  <!-- Phase banner -->
+  <div id="hud-skills">
+    <div class="skill-pill" id="sp-x"><div class="skill-key" id="sk-x">X</div><span>PULSO</span></div>
+    <div class="skill-pill" id="sp-z"><div class="skill-key" id="sk-z">Z</div><span>ESCUDO</span></div>
+  </div>
+
+  <div id="controls-hint">
+    WASD · Mover &nbsp;|&nbsp; ESPAÇO · Pular<br>
+    SHIFT · Correr &nbsp;|&nbsp; X · Pulso &nbsp;|&nbsp; Z · Escudo
+  </div>
+
+  <div id="boss-wrap">
+    <div id="boss-lbl">GUARDIÃO DAS SOMBRAS</div>
+    <div class="boss-track"><div id="boss-fill"></div></div>
+  </div>
+
+  <div id="combo">COMBO!</div>
+
   <div id="phase-banner">
-    <div class="phase-number" id="pb-num">FASE 1</div>
-    <div class="phase-line"></div>
-    <div class="phase-title" id="pb-title">Pelotas</div>
-    <div class="phase-line"></div>
+    <div id="pb-eyebrow">FASE 1</div>
+    <div class="pb-line"></div>
+    <div id="pb-title">Pelotas</div>
+    <div class="pb-line"></div>
   </div>
 
-</div><!-- /game-container -->
+  <div id="vignette"></div>
+</div>
 
-<script src="game.js"></script>
+<script type="module" src="game.js"></script>
 </body>
 </html>
