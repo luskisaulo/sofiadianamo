@@ -1,843 +1,1091 @@
 // ═══════════════════════════════════════════════════════════════════
-// A JORNADA DE SOFIA — game.js (Versão Pura / Sem Bibliotecas Externas)
-// Reconstruído com Canvas 2D Nativo para evitar bloqueios de CDN/CSP.
+// A JORNADA DE SOFIA — 3D  (Three.js r163, ES module)
 // ═══════════════════════════════════════════════════════════════════
+import * as THREE from 'three';
 
-window.addEventListener("load", function () {
+// ── DOM refs ─────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const lbar    = $('lbar'), lstat = $('lstat');
+const loadScr = $('loading');
+const menuOv  = $('menu-overlay');
+const endOv   = $('end-overlay');
 
-    // ── LOADING BAR (MANTIDO DO ORIGINAL) ────────────────────────────
-    const loadBar = document.getElementById("load-bar");
-    const loadMsg = document.getElementById("load-status");
-    const loadScr = document.getElementById("loading-screen");
-    const msgs = [
-        "Inicializando motor nativo…",
-        "Gerando partículas de afeto…",
-        "Carregando memórias…",
-        "Calibrando superpoderes…",
-        "Quase lá…", "Pronto!"
-    ];
-    let lp = 0;
-    const loadInt = setInterval(() => {
-        lp = Math.min(lp + Math.random() * 18 + 4, 100);
-        if (loadBar) loadBar.style.width = lp + "%";
-        if (loadMsg) loadMsg.textContent = msgs[Math.min(Math.floor(lp / 18), msgs.length - 1)];
-        if (lp >= 100) {
-            clearInterval(loadInt);
-            setTimeout(() => { if (loadScr) loadScr.classList.add("hidden"); }, 600);
-        }
-    }, 220);
+// ── Loading bar ───────────────────────────────────────────────────
+const loadMsgs = ['Inicializando motor 3D…','Construindo mundo…','Posicionando plataformas…','Acordando a Sofia…','Pronto!'];
+let lp = 0;
+const lti = setInterval(() => {
+  lp = Math.min(lp + Math.random()*20 + 5, 100);
+  if (lbar)  lbar.style.width  = lp + '%';
+  if (lstat) lstat.textContent = loadMsgs[Math.min(Math.floor(lp/22), loadMsgs.length-1)];
+  if (lp >= 100) { clearInterval(lti); setTimeout(()=> loadScr?.classList.add('hide'), 700); }
+}, 230);
 
-    // ── HUD HELPERS (MANTIDO DO ORIGINAL) ────────────────────────────
-    function hudUpdate(lives, mem, total, phase, power) {
-        ["h1", "h2", "h3"].forEach((id, i) => {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle("empty", i >= lives);
-        });
-        const m = document.getElementById("hud-mem");
-        if (m) m.textContent = mem + " / " + total;
-        const p = document.getElementById("hud-phase");
-        if (p) p.textContent = phase || "— — —";
-        const pb = document.getElementById("power-bar");
-        if (pb) pb.style.width = Math.min(power, 100) + "%";
-    }
-    function hudDamage() {
-        const v = document.getElementById("vignette");
-        if (!v) return;
-        v.classList.add("damaged");
-        setTimeout(() => v.classList.remove("damaged"), 420);
-    }
-    function showCombo(label) {
-        const el = document.getElementById("combo-popup");
-        if (!el) return;
-        el.textContent = label;
-        el.classList.add("show");
-        setTimeout(() => el.classList.remove("show"), 900);
-    }
-    function showFlash() {
-        const f = document.getElementById("flash");
-        if (!f) return;
-        f.classList.add("active");
-        setTimeout(() => f.classList.remove("active"), 90);
-    }
-    function showBossBar(name, pct) {
-        const c = document.getElementById("boss-bar-container");
-        const n = document.getElementById("boss-name-label");
-        const b = document.getElementById("boss-bar-fill");
-        if (c) c.classList.toggle("visible", pct > 0);
-        if (n) n.textContent = name;
-        if (b) b.style.width = pct + "%";
-    }
-    function showPhaseBanner(num, title) {
-        const el = document.getElementById("phase-banner");
-        const pn = document.getElementById("pb-num");
-        const pt = document.getElementById("pb-title");
-        if (!el) return;
-        if (pn) pn.textContent = num ? "FASE " + num : "";
-        if (pt) pt.textContent = title;
-        el.classList.add("show");
-        setTimeout(() => el.classList.remove("show"), 2800);
-    }
-    function setSkillReady(key, ready) {
-        const pill = document.getElementById("skill-" + key);
-        const k = document.getElementById("key-" + key);
-        if (pill) pill.classList.toggle("ready", ready);
-        if (k) k.classList.toggle("active", ready);
-    }
+// ── HUD helpers ───────────────────────────────────────────────────
+function setHearts(n) {
+  for (let i = 0; i < 3; i++) $('h'+i)?.classList.toggle('off', i >= n);
+}
+function setPower(v) {
+  const p = Math.min(v, 100);
+  const f = $('pbar-fill'); if (f) f.style.width = p + '%';
+  const v2 = $('pbar-val'); if (v2) v2.textContent = Math.floor(p);
+}
+function setGems(cur, tot) { const e = $('hud-gems'); if(e) e.textContent = cur + ' / ' + tot; }
+function setPhase(name)    { const e = $('hud-phase');  if(e) e.textContent = name || '— — —'; }
+function setScore(n)       { const e = $('hud-score');  if(e) e.textContent = n + ' pts'; }
+function hudDamage() {
+  const v = $('vignette'); if(!v) return;
+  v.classList.remove('damage'); void v.offsetWidth; v.classList.add('damage');
+}
+function showCombo(txt) {
+  const e = $('combo'); if(!e) return;
+  e.textContent = txt; e.classList.add('show');
+  setTimeout(() => e.classList.remove('show'), 900);
+}
+function showBossBar(name, pct) {
+  const w = $('boss-wrap'); if(w) w.classList.toggle('show', pct > 0);
+  const l = $('boss-lbl');  if(l) l.textContent = name;
+  const f = $('boss-fill'); if(f) f.style.width = pct + '%';
+}
+function showPhaseBanner(num, title) {
+  const el = $('phase-banner'); if(!el) return;
+  const ey = $('pb-eyebrow'); if(ey) ey.textContent = num ? 'FASE '+num : '';
+  const tt = $('pb-title');   if(tt) tt.textContent = title;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+function setSkill(k, ready) {
+  $('sp-'+k)?.classList.toggle('ready', ready);
+  $('sk-'+k)?.classList.toggle('active', ready);
+}
+function showEndScreen(title, sub, score, titleColor) {
+  const ov = $('end-overlay'); if(!ov) return;
+  const et = $('end-title'); if(et){ et.textContent = title; et.style.color = titleColor||'#fff'; et.style.textShadow = `0 0 24px ${titleColor||'#fff'}`; }
+  const es = $('end-sub');   if(es) es.textContent = sub;
+  const sc = $('end-score'); if(sc) sc.textContent = 'Pontuação: ' + score;
+  ov.classList.add('show');
+}
+function hideEndScreen() { $('end-overlay')?.classList.remove('show'); }
 
-    // ── CONFIGURAÇÃO DO CANVAS NATIVO ────────────────────────────────
-    const container = document.getElementById("game-container");
-    const canvas = document.createElement("canvas");
-    canvas.width = 1280;
-    canvas.height = 720;
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.objectFit = "contain";
-    canvas.style.backgroundColor = "rgb(7, 9, 15)";
-    if (container) container.appendChild(canvas);
-    const ctx = canvas.getContext("2d");
+// ── Input ─────────────────────────────────────────────────────────
+const K = {}, KP = {}, KR = {};
+window.addEventListener('keydown', e => {
+  if (!K[e.code]) KP[e.code] = true;
+  K[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { K[e.code] = false; KR[e.code] = true; });
+function clearKeys() { for (const k in KP) delete KP[k]; for (const k in KR) delete KR[k]; }
+const key  = c => !!K[c];
+const pressed = c => !!KP[c];
 
-    // ── CONTROLES GLOBAIS ────────────────────────────────────────────
-    const keys = { right: false, left: false, space: false, x: false, z: false, enter: false };
-    const pressedThisFrame = {};
+// ── Renderer ──────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
 
-    window.addEventListener("keydown", (e) => {
-        let key = e.key.toLowerCase();
-        if (key === " ") key = "space";
-        if (key === "arrowright") key = "right";
-        if (key === "arrowleft") key = "left";
-        if (!keys[key]) pressedThisFrame[key] = true;
-        keys[key] = true;
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Camera ────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.1, 800);
+camera.position.set(0, 8, 14);
+
+// ── Global state ─────────────────────────────────────────────────
+const G = {
+  vidas:3, vidasMax:3, poder:0, combo:0, pontos:0,
+  gems:0, totalGems:0, faseNome:'', shieldOn:false,
+  reset(){ this.vidas=3; this.poder=0; this.combo=0; this.pontos=0; this.gems=0; this.shieldOn=false; }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SCENE MANAGER
+// ═══════════════════════════════════════════════════════════════════
+let activeScene = null;
+let pendingScene = null;
+function goTo(name) { pendingScene = name; }
+
+// ── Shared assets ─────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+// ── Particle system ───────────────────────────────────────────────
+const MAX_P = 800;
+const pGeo  = new THREE.BufferGeometry();
+const pPos  = new Float32Array(MAX_P * 3);
+const pCol  = new Float32Array(MAX_P * 3);
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('color',    new THREE.BufferAttribute(pCol, 3));
+const pMat  = new THREE.PointsMaterial({ size:0.22, vertexColors:true, transparent:true, depthWrite:false });
+const pMesh = new THREE.Points(pGeo, pMat);
+
+const pData = []; // { x,y,z, vx,vy,vz, life, maxLife, r,g,b }
+function burst3(x, y, z, n, r, g, b) {
+  for (let i = 0; i < n; i++) {
+    const ang  = Math.random() * Math.PI * 2;
+    const elev = (Math.random() - 0.5) * Math.PI;
+    const spd  = 2 + Math.random() * 6;
+    pData.push({
+      x, y, z,
+      vx: Math.cos(elev)*Math.cos(ang)*spd,
+      vy: Math.sin(elev)*spd + 2,
+      vz: Math.cos(elev)*Math.sin(ang)*spd,
+      life: 0.5 + Math.random()*0.7,
+      maxLife: 1,
+      r, g, b
     });
-    window.addEventListener("keyup", (e) => {
-        let key = e.key.toLowerCase();
-        if (key === " ") key = "space";
-        if (key === "arrowright") key = "right";
-        if (key === "arrowleft") key = "left";
-        keys[key] = false;
-    });
+    if (pData.length > MAX_P) pData.shift();
+  }
+}
+function updateParticles(dt) {
+  for (let i = pData.length-1; i >= 0; i--) {
+    const p = pData[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+    p.vy -= 9*dt;
+    p.life -= dt;
+    if (p.life <= 0) pData.splice(i,1);
+  }
+  for (let i = 0; i < MAX_P; i++) {
+    const p = pData[i];
+    if (p) {
+      pPos[i*3]=p.x; pPos[i*3+1]=p.y; pPos[i*3+2]=p.z;
+      const a = Math.max(0, p.life/p.maxLife);
+      pCol[i*3]=p.r*a; pCol[i*3+1]=p.g*a; pCol[i*3+2]=p.b*a;
+    } else {
+      pPos[i*3]=0; pPos[i*3+1]=-999; pPos[i*3+2]=0;
+    }
+  }
+  pGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.color.needsUpdate    = true;
+}
 
-    // Função auxiliar para teclas pressionadas apenas uma vez
-    function isKeyPressed(k) { return !!pressedThisFrame[k]; }
+// ═══════════════════════════════════════════════════════════════════
+// GEOMETRY HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function makePlatform(scene, x,y,z, w,h,d, color, emissive) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.MeshStandardMaterial({
+    color: color||0x2a3060,
+    emissive: emissive||0x101830,
+    emissiveIntensity: 0.3,
+    roughness: 0.6, metalness: 0.4,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x, y, z);
+  mesh.receiveShadow = true; mesh.castShadow = true;
+  scene.add(mesh);
+  // top edge glow strip
+  const eg = new THREE.BoxGeometry(w, 0.08, d);
+  const em = new THREE.MeshStandardMaterial({ color:0x6080ff, emissive:0x3050cc, emissiveIntensity:1.2, roughness:0.2 });
+  const es = new THREE.Mesh(eg, em);
+  es.position.set(x, y+h/2+0.04, z);
+  scene.add(es);
+  return mesh;
+}
 
-    // ── ESTADO GLOBAL ────────────────────────────────────────────────
-    const ESTADO = {
-        vidas: 3, vidasMax: 3,
-        lembrancas: 0, faseAtual: "fase1",
-        pontos: 0, combo: 0, poder: 0, escudo: false,
-        reset() {
-            this.vidas = this.vidasMax; this.lembrancas = 0;
-            this.pontos = 0; this.combo = 0; this.poder = 0; this.escudo = false;
+function makeGem(scene, x,y,z) {
+  const g = new THREE.OctahedronGeometry(0.35, 0);
+  const m = new THREE.MeshStandardMaterial({ color:0xff3fa4, emissive:0xff0070, emissiveIntensity:0.8, roughness:0.1, metalness:0.6 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  // glow point light
+  const pl = new THREE.PointLight(0xff3fa4, 0.8, 3);
+  pl.position.copy(mesh.position);
+  scene.add(pl);
+  scene.add(mesh);
+  return { mesh, light:pl, baseY:y, alive:true, t: Math.random()*Math.PI*2 };
+}
+
+function makePowerup(scene, x,y,z) {
+  const g = new THREE.TorusGeometry(0.3, 0.1, 8, 16);
+  const m = new THREE.MeshStandardMaterial({ color:0xffd700, emissive:0xffaa00, emissiveIntensity:1, roughness:0.1 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x,y,z);
+  const pl = new THREE.PointLight(0xffd700, 0.9, 3.5);
+  pl.position.copy(mesh.position);
+  scene.add(pl); scene.add(mesh);
+  return { mesh, light:pl, baseY:y, alive:true, t:Math.random()*Math.PI*2 };
+}
+
+function makeHazardTile(scene, x,y,z, type) {
+  const g = new THREE.BoxGeometry(2,0.3,2);
+  const col  = type==='lava' ? 0xdd3300 : 0x0040cc;
+  const emis = type==='lava' ? 0xff2200 : 0x002288;
+  const m = new THREE.MeshStandardMaterial({ color:col, emissive:emis, emissiveIntensity:0.9, roughness:0.5, transparent:true, opacity:0.85 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x,y,z);
+  const pl = new THREE.PointLight(col, 0.7, 5);
+  pl.position.set(x,y+1,z);
+  scene.add(pl); scene.add(mesh);
+  return { mesh, type };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PLAYER
+// ═══════════════════════════════════════════════════════════════════
+function makePlayer(scene) {
+  const group = new THREE.Group();
+
+  // Body — capsule approximated with cylinder+spheres
+  const bodyG = new THREE.CapsuleGeometry(0.4, 0.8, 8, 16);
+  const bodyM = new THREE.MeshStandardMaterial({ color:0xff50aa, emissive:0xff0080, emissiveIntensity:0.4, roughness:0.3, metalness:0.5 });
+  const body  = new THREE.Mesh(bodyG, bodyM);
+  body.castShadow = true;
+  group.add(body);
+
+  // Hair tuft
+  const hairG = new THREE.SphereGeometry(0.42, 8, 6, 0, Math.PI*2, 0, Math.PI*0.5);
+  const hairM = new THREE.MeshStandardMaterial({ color:0xff0088, emissive:0xcc0060, emissiveIntensity:0.5, roughness:0.4 });
+  const hair  = new THREE.Mesh(hairG, hairM);
+  hair.position.y = 0.82;
+  group.add(hair);
+
+  // Eyes
+  const eyeG = new THREE.SphereGeometry(0.07, 6, 6);
+  const eyeM = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xffffff, emissiveIntensity:0.5 });
+  [-0.16, 0.16].forEach(ex => {
+    const e = new THREE.Mesh(eyeG, eyeM);
+    e.position.set(ex, 0.25, 0.37);
+    group.add(e);
+  });
+
+  // Shield ring (hidden by default)
+  const shieldG = new THREE.TorusGeometry(0.72, 0.04, 8, 32);
+  const shieldM = new THREE.MeshStandardMaterial({ color:0x00f5ff, emissive:0x00c8ff, emissiveIntensity:1.2, transparent:true, opacity:0 });
+  const shieldMesh = new THREE.Mesh(shieldG, shieldM);
+  shieldMesh.rotation.x = Math.PI/2;
+  group.add(shieldMesh);
+
+  // Body glow light
+  const glow = new THREE.PointLight(0xff3fa4, 1.2, 4);
+  group.add(glow);
+
+  scene.add(group);
+
+  const shadow = (() => {
+    const sg = new THREE.CircleGeometry(0.4, 16);
+    const sm = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.35, depthWrite:false });
+    const s  = new THREE.Mesh(sg, sm);
+    s.rotation.x = -Math.PI/2;
+    scene.add(s);
+    return s;
+  })();
+
+  return {
+    group, body, bodyM, shieldMesh, shieldM, glow, shadow,
+    vel: new THREE.Vector3(),
+    onGround: false,
+    facingAngle: 0,
+    invTimer: 0, shieldTimer:0, shieldCD:0, pulsoCD:0,
+    blinkOn: true, blinkTimer:0,
+
+    get pos() { return group.position; },
+    get shielded() { return this.shieldTimer > 0; },
+    get inv() { return this.invTimer > 0; },
+
+    takeDamage() {
+      if (this.inv || this.shielded) return;
+      G.vidas--; G.combo = 0; G.shieldOn = false;
+      this.invTimer = 1.5;
+      hudDamage();
+      burst3(this.pos.x, this.pos.y, this.pos.z, 12, 1,0.3,0.3);
+      if (G.vidas <= 0) goTo('_gameover');
+    },
+
+    usePulso(enemies, boss) {
+      if (this.pulsoCD > 0 || G.poder < 30) return;
+      G.poder -= 30; this.pulsoCD = 4;
+      burst3(this.pos.x, this.pos.y, this.pos.z, 24, 1,0.8,0);
+      showCombo('PULSO!');
+      // hit nearby enemies
+      const range = 7;
+      enemies.forEach(e => {
+        if (!e.alive) return;
+        const d = e.mesh.position.distanceTo(this.pos);
+        if (d < range) {
+          e.hp -= 2;
+          const dir = e.mesh.position.clone().sub(this.pos).normalize();
+          e.mesh.position.addScaledVector(dir, 3);
+          if (e.hp <= 0) killEnemy(e);
         }
-    };
+      });
+      if (boss && boss.alive) {
+        const d = boss.mesh.position.distanceTo(this.pos);
+        if (d < range + 2) { boss.hp -= 2; boss.flashTimer = 0.1; checkBoss(boss); }
+      }
+    },
 
-    // ── PALETA ───────────────────────────────────────────────────────
-    const C = {
-        PLAT: "rgb(40, 45, 70)", PLAT2: "rgb(30, 60, 90)",
-        AGUA: "rgba(0, 80, 200, 0.7)", LAVA: "rgba(200, 50, 10, 0.9)",
-        MEM: "rgb(255, 60, 170)", ENEMY: "rgb(200, 40, 40)",
-        ENEMY2: "rgb(80, 0, 180)", BULLET: "rgb(255, 100, 20)",
-        PODER: "rgb(255, 200, 0)", BOSS: "rgb(160, 0, 60)"
-    };
+    useShield() {
+      if (this.shieldCD > 0 || this.shieldTimer > 0 || G.poder < 20) return;
+      G.poder -= 20; this.shieldTimer = 3.5;
+      burst3(this.pos.x, this.pos.y, this.pos.z, 10, 0,0.8,1);
+    },
 
-    // ── MOTOR: FÍSICA E ENTIDADES ────────────────────────────────────
-    const GRAVITY = 2200;
-    let scene = "menu";
-    let gameTime = 0;
-    let shakeTimer = 0;
-    let shakeIntensity = 0;
-    
-    // Entidades em cena
-    let player = null;
-    let boss = null;
-    let platforms = [];
-    let hazards = [];
-    let enemies = [];
-    let collectibles = [];
-    let projectiles = [];
-    let particles = [];
-    let bgStars = [];
-    let texts = []; // Textos fixos nas fases
-    let bgColors = [7, 9, 15]; // Fundo atual da cena
+    update(dt, platforms, hazards, gems, powerups, enemies, boss) {
+      // timers
+      if (this.invTimer  > 0) { this.invTimer  -= dt; if(this.invTimer  < 0) this.invTimer  = 0; }
+      if (this.shieldTimer > 0) { this.shieldTimer -= dt;
+        if (this.shieldTimer < 0) { this.shieldTimer = 0; this.shieldCD = 5; }
+      }
+      if (this.shieldCD > 0) { this.shieldCD -= dt; if(this.shieldCD < 0) this.shieldCD = 0; }
+      if (this.pulsoCD  > 0) { this.pulsoCD  -= dt; if(this.pulsoCD  < 0) this.pulsoCD  = 0; }
 
-    // Câmera
-    let cam = { x: 640, y: 360 };
+      // blink invulnerability
+      if (this.inv) {
+        this.blinkTimer += dt;
+        if (this.blinkTimer > 0.08) { this.blinkTimer = 0; this.blinkOn = !this.blinkOn; }
+        this.group.visible = this.blinkOn;
+      } else {
+        this.group.visible = true;
+      }
 
-    // Utilitários de motor
-    function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
-    function rand(min, max) { return Math.random() * (max - min) + min; }
-    function dist(p1, p2) { return Math.hypot(p2.x - p1.x, p2.y - p1.y); }
-    function AABB(r1, r2) {
-        return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
-    }
-    function shake(val) { shakeTimer = 0.2; shakeIntensity = val; }
+      // movement direction relative to camera
+      const run = key('ShiftLeft')||key('ShiftRight');
+      const speed = run ? 9 : 5.5;
+      let moveX = 0, moveZ = 0;
+      if (key('KeyA')||key('ArrowLeft'))  moveX -= 1;
+      if (key('KeyD')||key('ArrowRight')) moveX += 1;
+      if (key('KeyW')||key('ArrowUp'))    moveZ -= 1;
+      if (key('KeyS')||key('ArrowDown'))  moveZ += 1;
 
-    function burst(x, y, n, colorStr, radius = 6) {
-        for (let i = 0; i < n; i++) {
-            const angle = rand(0, Math.PI * 2);
-            const speed = rand(60, 260);
-            particles.push({
-                x, y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                color: colorStr,
-                r: rand(2, radius),
-                life: 1.0,
-                maxLife: rand(0.3, 0.9)
-            });
+      // rotate to camera forward
+      const camFwd = new THREE.Vector3();
+      camera.getWorldDirection(camFwd); camFwd.y = 0; camFwd.normalize();
+      const camRight = new THREE.Vector3().crossVectors(camFwd, new THREE.Vector3(0,1,0));
+
+      const move = camFwd.clone().multiplyScalar(-moveZ).add(camRight.clone().multiplyScalar(moveX));
+      if (move.length() > 0.01) {
+        move.normalize();
+        this.vel.x = move.x * speed;
+        this.vel.z = move.z * speed;
+        this.facingAngle = Math.atan2(move.x, move.z);
+      } else {
+        this.vel.x *= 0.82;
+        this.vel.z *= 0.82;
+      }
+
+      // jump
+      if ((pressed('Space')) && this.onGround) {
+        this.vel.y = 11;
+        this.onGround = false;
+        burst3(this.pos.x, this.pos.y-0.6, this.pos.z, 6, 0.7,0.7,1);
+      }
+
+      // skills
+      if (pressed('KeyX')) this.usePulso(enemies, boss);
+      if (pressed('KeyZ')) this.useShield();
+
+      // gravity
+      if (!this.onGround) this.vel.y -= 22 * dt;
+      else if (this.vel.y < 0) this.vel.y = 0;
+
+      // move
+      this.pos.x += this.vel.x * dt;
+      this.pos.y += this.vel.y * dt;
+      this.pos.z += this.vel.z * dt;
+
+      // platform collision
+      this.onGround = false;
+      const FEET = 0.6; // half-height
+      platforms.forEach(plat => {
+        const pp = plat.position;
+        const ph = plat.geometry.parameters.height;
+        const pw = plat.geometry.parameters.width;
+        const pd = plat.geometry.parameters.depth;
+        const top = pp.y + ph/2;
+        // only resolve from above
+        if (
+          this.pos.x > pp.x - pw/2 - 0.3 && this.pos.x < pp.x + pw/2 + 0.3 &&
+          this.pos.z > pp.z - pd/2 - 0.3 && this.pos.z < pp.z + pd/2 + 0.3
+        ) {
+          if (this.pos.y - FEET < top + 0.25 && this.pos.y - FEET > top - 0.6 && this.vel.y <= 0) {
+            this.pos.y = top + FEET;
+            this.vel.y = 0;
+            this.onGround = true;
+          }
+          // head bump
+          if (this.pos.y + FEET > pp.y - ph/2 && this.pos.y + FEET < pp.y - ph/2 + 0.5 && this.vel.y > 0) {
+            this.vel.y = 0;
+          }
         }
+      });
+
+      // hazards
+      hazards.forEach(h => {
+        const hp = h.mesh.position;
+        if (
+          Math.abs(this.pos.x - hp.x) < 1.2 &&
+          Math.abs(this.pos.z - hp.z) < 1.2 &&
+          Math.abs(this.pos.y - hp.y) < 1.0
+        ) { this.takeDamage(); }
+      });
+
+      // gems
+      gems.forEach(g => {
+        if (!g.alive) return;
+        if (this.pos.distanceTo(g.mesh.position) < 1.0) {
+          g.alive = false; g.mesh.visible = false; g.light.visible = false;
+          G.gems++; G.poder = Math.min(G.poder+8,100);
+          burst3(g.mesh.position.x, g.mesh.position.y, g.mesh.position.z, 10, 1,0.2,0.65);
+          if (G.gems >= G.totalGems) setTimeout(()=>goTo(activeScene._next||'_gameover'), 600);
+        }
+      });
+
+      // powerups
+      powerups.forEach(p => {
+        if (!p.alive) return;
+        if (this.pos.distanceTo(p.mesh.position) < 1.1) {
+          p.alive = false; p.mesh.visible = false; p.light.visible = false;
+          G.poder = Math.min(G.poder+35,100);
+          showCombo('PODER +35!');
+          burst3(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, 14, 1,0.85,0);
+        }
+      });
+
+      // fall abyss
+      if (this.pos.y < -15) {
+        this.takeDamage();
+        if (G.vidas > 0) { this.pos.set(activeScene._spawnX||0, 3, activeScene._spawnZ||0); this.vel.set(0,0,0); }
+      }
+
+      // rotate body
+      this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.facingAngle, 0.2);
+
+      // bob when moving
+      const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
+      this.body.position.y = moving ? Math.sin(Date.now()*0.01)*0.04 : 0;
+
+      // shield visual
+      this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
+      this.shieldMesh.rotation.z += dt*2;
+      this.shieldMesh.rotation.y += dt*1.3;
+
+      // glow color
+      if (this.shielded) { this.bodyM.color.set(0x64c8ff); this.bodyM.emissive.set(0x0080cc); this.glow.color.set(0x00f5ff); }
+      else { this.bodyM.color.set(0xff50aa); this.bodyM.emissive.set(0xff0080); this.glow.color.set(0xff3fa4); }
+
+      // shadow on floor
+      this.shadow.position.set(this.pos.x, this.pos.y - FEET + 0.02, this.pos.z);
+
+      // HUD
+      setHearts(G.vidas); setPower(G.poder); setGems(G.gems, G.totalGems); setScore(G.pontos);
+      setSkill('x', G.poder >= 30 && this.pulsoCD <= 0);
+      setSkill('z', G.poder >= 20 && this.shieldCD <= 0 && !this.shielded);
+
+      // camera follow (Mario 64 style)
+      const idealOffset = new THREE.Vector3(0, 6, 11);
+      idealOffset.applyAxisAngle(new THREE.Vector3(0,1,0), camYaw);
+      const idealPos = this.pos.clone().add(idealOffset);
+      camera.position.lerp(idealPos, dt*4);
+      const lookAt = this.pos.clone().add(new THREE.Vector3(0,1,0));
+      camera.lookAt(lookAt);
     }
+  };
+}
 
-    // ── DEFINIÇÃO DAS ENTIDADES ──────────────────────────────────────
-    function createPlayer(x, y) {
-        player = {
-            x: x, y: y, w: 28, h: 52,
-            vx: 0, vy: 0,
-            jumpForce: 800, speed: 340,
-            isGrounded: false, invulTimer: 0, color: "rgb(255, 80, 170)",
-            escudoAtivo: false, pulsoCD: 0, escudoCD: 0, escudoTimer: 0,
+// ── Camera yaw (mouse drag) ───────────────────────────────────────
+let camYaw = 0, isDragging = false, lastMX = 0;
+window.addEventListener('mousedown', e => { isDragging = true; lastMX = e.clientX; });
+window.addEventListener('mouseup',   () => { isDragging = false; });
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  camYaw += (e.clientX - lastMX) * 0.005;
+  lastMX = e.clientX;
+});
+window.addEventListener('touchstart', e => { lastMX = e.touches[0].clientX; });
+window.addEventListener('touchmove',  e => {
+  camYaw += (e.touches[0].clientX - lastMX) * 0.006;
+  lastMX = e.touches[0].clientX;
+});
 
-            update(dt) {
-                // Entrada (X)
-                this.vx = 0;
-                if (keys.right) this.vx = this.speed;
-                if (keys.left) this.vx = -this.speed;
+// ═══════════════════════════════════════════════════════════════════
+// ENEMY
+// ═══════════════════════════════════════════════════════════════════
+function makeEnemy(scene, x,y,z, tipo) {
+  const cfgs = {
+    basico: { color:0xcc2222, emis:0x880000, hp:2, vel:3.0, pts:50, range:5 },
+    voador: { color:0x5500cc, emis:0x3300aa, hp:1, vel:4.0, pts:80, range:7 },
+    tanque: { color:0x551100, emis:0x330800, hp:6, vel:1.5, pts:200, range:4 },
+  };
+  const cfg = cfgs[tipo]||cfgs.basico;
+  const g   = tipo==='voador' ? new THREE.SphereGeometry(0.45,10,8) : new THREE.BoxGeometry(0.8,1.0,0.8);
+  const m   = new THREE.MeshStandardMaterial({ color:cfg.color, emissive:cfg.emis, emissiveIntensity:0.5, roughness:0.5, metalness:0.3 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x,y,z); mesh.castShadow = true;
+  scene.add(mesh);
+  // HP bar (plane facing camera — handled in CSS HUD for simplicity, skip)
+  // eye
+  const eyeG = new THREE.SphereGeometry(0.09, 6, 6);
+  const eyeM = new THREE.MeshStandardMaterial({ color:0xff4444, emissive:0xff0000, emissiveIntensity:1 });
+  const eye  = new THREE.Mesh(eyeG, eyeM);
+  eye.position.set(0, 0.2, 0.4);
+  mesh.add(eye);
 
-                // Movimento X & Colisão
-                this.x += this.vx * dt;
-                for (let p of platforms) {
-                    if (AABB(this, p)) {
-                        if (this.vx > 0) this.x = p.x - this.w;
-                        else if (this.vx < 0) this.x = p.x + p.w;
-                    }
-                }
+  const pl = new THREE.PointLight(cfg.color, 0.5, 4);
+  mesh.add(pl);
 
-                // Entrada (Pulo)
-                if (isKeyPressed("space") && this.isGrounded) {
-                    this.vy = -this.jumpForce;
-                    burst(this.x + this.w / 2, this.y + this.h, 5, "rgb(180,180,255)", 4);
-                }
+  return { mesh, m, hp:cfg.hp, hpMax:cfg.hp, vel:cfg.vel, pts:cfg.pts,
+           tipo, spawnX:x, spawnY:y, spawnZ:z, dir:1, t:0, alive:true,
+           flashTimer:0, range:cfg.range };
+}
 
-                // Gravidade, Movimento Y & Colisão
-                this.vy += GRAVITY * dt;
-                this.y += this.vy * dt;
-                this.isGrounded = false;
-                for (let p of platforms) {
-                    if (AABB(this, p)) {
-                        if (this.vy > 0) {
-                            this.y = p.y - this.h;
-                            this.vy = 0;
-                            this.isGrounded = true;
-                        } else if (this.vy < 0) {
-                            this.y = p.y + p.h;
-                            this.vy = 0;
-                        }
-                    }
-                }
+function killEnemy(e) {
+  if (!e.alive) return;
+  e.alive = false; e.mesh.visible = false;
+  G.pontos += e.pts; G.combo++;
+  G.poder = Math.min(G.poder+12,100);
+  if (G.combo >= 3) showCombo('×'+G.combo+' COMBO!');
+  burst3(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z, 16, 0.8,0.2,0.2);
+}
 
-                // Habilidades e Cooldowns
-                if (this.pulsoCD > 0) this.pulsoCD -= dt;
-                if (this.escudoCD > 0) this.escudoCD -= dt;
-
-                if (isKeyPressed("x") && this.pulsoCD <= 0 && ESTADO.poder >= 30) {
-                    ESTADO.poder -= 30;
-                    this.pulsoCD = 4.0;
-                    showFlash(); shake(8);
-                    burst(this.x + this.w / 2, this.y + this.h / 2, 20, "rgb(255,200,0)", 10);
-                    showCombo("PULSO!");
-                    
-                    for (let e of enemies) {
-                        let cx = this.x + this.w / 2; let cy = this.y + this.h / 2;
-                        let ex = e.x + e.w / 2; let ey = e.y + e.h / 2;
-                        if (dist({ x: cx, y: cy }, { x: ex, y: ey }) < 220) {
-                            e.hp -= 2; e.flash = 0.1;
-                            let angle = Math.atan2(ey - cy, ex - cx);
-                            e.x += Math.cos(angle) * 90;
-                        }
-                    }
-                }
-
-                if (isKeyPressed("z") && this.escudoCD <= 0 && !this.escudoAtivo && ESTADO.poder >= 20) {
-                    ESTADO.poder -= 20;
-                    this.escudoAtivo = true;
-                    this.escudoTimer = 3.5;
-                    burst(this.x + this.w / 2, this.y + this.h / 2, 12, "rgb(0,200,255)", 7);
-                }
-
-                if (this.escudoAtivo) {
-                    this.escudoTimer -= dt;
-                    if (this.escudoTimer <= 0) {
-                        this.escudoAtivo = false;
-                        this.escudoCD = 5.0;
-                    }
-                }
-
-                if (this.invulTimer > 0) this.invulTimer -= dt;
-
-                // Abismo
-                if (this.y > 1600) this.sofrerDano(true);
-                
-                // Coleta
-                for (let i = collectibles.length - 1; i >= 0; i--) {
-                    let c = collectibles[i];
-                    if (AABB(this, c)) {
-                        if (c.type === "lembranca") {
-                            ESTADO.lembrancas++;
-                            ESTADO.poder = Math.min(ESTADO.poder + 8, 100);
-                            burst(c.x, c.y, 10, "rgb(255,60,170)");
-                            if (ESTADO.lembrancas >= window._totalMem) {
-                                setTimeout(() => loadScene(window._proxFase), 600);
-                            }
-                        } else {
-                            ESTADO.poder = Math.min(ESTADO.poder + 35, 100);
-                            showCombo("PODER +35!");
-                            burst(c.x, c.y, 14, "rgb(255,210,0)", 7);
-                        }
-                        collectibles.splice(i, 1);
-                    }
-                }
-
-                // Dano por hazards
-                for (let h of hazards) {
-                    if (AABB(this, h)) this.sofrerDano();
-                }
-
-                // HUD updates
-                hudUpdate(ESTADO.vidas, ESTADO.lembrancas, window._totalMem || 0, window._faseNome || "", ESTADO.poder);
-                setSkillReady("x", ESTADO.poder >= 30 && this.pulsoCD <= 0);
-                setSkillReady("z", ESTADO.poder >= 20 && this.escudoCD <= 0 && !this.escudoAtivo);
-            },
-
-            sofrerDano(instantKill = false) {
-                if ((this.invulTimer > 0 || this.escudoAtivo) && !instantKill) return;
-                ESTADO.vidas--;
-                ESTADO.combo = 0;
-                this.invulTimer = 1.4;
-                hudDamage(); shake(12);
-                burst(this.x + this.w / 2, this.y + this.h / 2, 10, "rgb(255,80,80)");
-                if (ESTADO.vidas <= 0) { loadScene("gameover"); return; }
-                if (instantKill) loadScene(ESTADO.faseAtual);
-            },
-
-            draw(ctx) {
-                let blink = this.invulTimer > 0 && Math.floor(gameTime * 15) % 2 === 0;
-                if (!blink) {
-                    ctx.fillStyle = this.escudoAtivo ? "rgb(100, 200, 255)" : this.color;
-                    ctx.strokeStyle = "rgb(255,150,220)";
-                    ctx.lineWidth = 2;
-                    // Corpo arredondado
-                    ctx.beginPath(); ctx.roundRect(this.x, this.y, this.w, this.h, 4);
-                    ctx.fill(); ctx.stroke();
-                }
-                
-                // Anel do escudo
-                if (this.escudoAtivo || this.escudoTimer > 0) {
-                    let op = this.escudoAtivo ? (0.22 + 0.1 * Math.sin(gameTime * 8)) : 0;
-                    if(op > 0) {
-                        ctx.beginPath();
-                        ctx.arc(this.x + this.w / 2, this.y + this.h / 2, 38, 0, Math.PI * 2);
-                        ctx.fillStyle = `rgba(0, 200, 255, ${op})`;
-                        ctx.fill();
-                    }
-                }
-            }
-        };
+function updateEnemies(dt, enemies, player) {
+  enemies.forEach(e => {
+    if (!e.alive) return;
+    if (e.flashTimer > 0) {
+      e.flashTimer -= dt;
+      e.m.emissiveIntensity = e.flashTimer > 0 ? 2.5 : 0.5;
     }
+    e.t += dt;
+    if (e.tipo === 'voador') {
+      e.mesh.position.x = e.spawnX + Math.sin(e.t * e.vel * 0.5) * e.range;
+      e.mesh.position.y = e.spawnY + Math.sin(e.t * 1.8) * 0.8;
+    } else {
+      e.mesh.position.x += e.dir * e.vel * dt;
+      if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) e.dir *= -1;
+      e.mesh.rotation.y += dt;
+    }
+    // face toward player
+    const dx = player.pos.x - e.mesh.position.x;
+    const dz = player.pos.z - e.mesh.position.z;
+    e.mesh.rotation.y = Math.atan2(dx, dz);
 
-    function createEnemy(x, y, type) {
-        const cfgs = {
-            basico: { c:"rgb(200,40,40)", hp:2, vel:120, w:30, h:38, pts:50 },
-            voador: { c:"rgb(80,0,180)",  hp:1, vel:160, w:26, h:26, pts:80 },
-            tanque: { c:"rgb(80,20,20)",  hp:6, vel:60,  w:48, h:52, pts:200 },
-        };
-        const c = cfgs[type];
-        enemies.push({
-            x: x - c.w/2, y: y - c.h, w: c.w, h: c.h,
-            color: c.c, hp: c.hp, maxHp: c.hp, vel: c.vel, dir: 1, type: type, spawnX: x, vt: 0, flash: 0
+    // contact damage
+    if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOSS
+// ═══════════════════════════════════════════════════════════════════
+let bossRef = null;
+function makeBoss(scene, x,y,z) {
+  const g = new THREE.Group();
+  const bodyG = new THREE.BoxGeometry(1.6, 2.0, 1.6);
+  const bodyM = new THREE.MeshStandardMaterial({ color:0x880030, emissive:0x440018, emissiveIntensity:0.6, roughness:0.4, metalness:0.6 });
+  const body  = new THREE.Mesh(bodyG, bodyM);
+  body.castShadow = true; g.add(body);
+  // crown spikes
+  for (let i=0; i<5; i++) {
+    const sg = new THREE.ConeGeometry(0.15, 0.5, 6);
+    const sm = new THREE.MeshStandardMaterial({ color:0xff2244, emissive:0xff0020, emissiveIntensity:0.8 });
+    const s  = new THREE.Mesh(sg, sm);
+    const a  = (i/5)*Math.PI*2;
+    s.position.set(Math.cos(a)*0.55, 1.15, Math.sin(a)*0.55);
+    g.add(s);
+  }
+  // eyes
+  [-0.35,0.35].forEach(ex => {
+    const eg = new THREE.SphereGeometry(0.15,8,8);
+    const em = new THREE.MeshStandardMaterial({ color:0xff4400, emissive:0xff2200, emissiveIntensity:1.2 });
+    const e2 = new THREE.Mesh(eg, em); e2.position.set(ex,0.3,0.82); g.add(e2);
+  });
+  const pl = new THREE.PointLight(0xff0040, 2, 8);
+  g.add(pl);
+  g.position.set(x,y,z);
+  scene.add(g);
+
+  bossRef = {
+    mesh:g, bodyM, pl, hp:14, hpMax:14, alive:true,
+    spawnX:x, spawnZ:z, dir:1, fase:1, atTimer:0, t:0, flashTimer:0
+  };
+  showBossBar('GUARDIÃO DAS SOMBRAS', 100);
+  return bossRef;
+}
+
+let bossBullets = [];
+function shootBossBullet(scene, boss, player) {
+  const dir = player.pos.clone().sub(boss.mesh.position).normalize();
+  const bg = new THREE.SphereGeometry(0.18, 8, 8);
+  const bm = new THREE.MeshStandardMaterial({ color:0xff8800, emissive:0xff4400, emissiveIntensity:1.2 });
+  const mesh = new THREE.Mesh(bg, bm); mesh.position.copy(boss.mesh.position); mesh.position.y += 0.5;
+  scene.add(mesh);
+  bossBullets.push({ mesh, vel:dir.clone().multiplyScalar(8), alive:true, t:0 });
+}
+
+function checkBoss(boss) {
+  if (!boss || !boss.alive) return;
+  if (boss.hp <= 0) {
+    boss.alive = false; boss.mesh.visible = false;
+    G.pontos += 1000; G.poder = Math.min(G.poder+40,100);
+    burst3(boss.mesh.position.x, boss.mesh.position.y, boss.mesh.position.z, 40, 1,0.3,0.6);
+    showBossBar('GUARDIÃO DAS SOMBRAS', 0);
+    showCombo('BOSS DERROTADO!');
+    setTimeout(()=>goTo('_vitoria'), 1800);
+  } else {
+    showBossBar('GUARDIÃO DAS SOMBRAS', boss.hp/boss.hpMax*100);
+    if (boss.hp < boss.hpMax*0.4 && boss.fase===1) {
+      boss.fase = 2;
+      boss.bodyM.color.set(0xff0030);
+      boss.pl.color.set(0xff4400); boss.pl.intensity = 3;
+      showCombo('FÚRIA DO CHEFE!');
+    }
+  }
+}
+
+function updateBoss(dt, boss, player, scene) {
+  if (!boss || !boss.alive) return;
+  boss.t += dt;
+  if (boss.flashTimer > 0) { boss.flashTimer -= dt; boss.bodyM.emissiveIntensity = boss.flashTimer>0 ? 2.5 : 0.6; }
+
+  const spd = boss.fase===2 ? 4.5 : 2.5;
+  boss.mesh.position.x += boss.dir * spd * dt;
+  if (Math.abs(boss.mesh.position.x - boss.spawnX) > 7) boss.dir *= -1;
+  boss.mesh.rotation.y += dt*0.5;
+  boss.mesh.position.y = boss.mesh.position.y + Math.sin(boss.t*1.5)*0.01;
+
+  boss.atTimer += dt;
+  const cd = boss.fase===2 ? 1.0 : 2.0;
+  if (boss.atTimer >= cd) {
+    boss.atTimer = 0;
+    shootBossBullet(scene, boss, player);
+    if (boss.fase===2) setTimeout(()=>{ if(boss.alive) shootBossBullet(scene, boss, player); }, 300);
+  }
+
+  // contact
+  if (player.pos.distanceTo(boss.mesh.position) < 1.6) {
+    if (!player.onGround && player.vel.y < 0) {
+      boss.hp -= 1; boss.flashTimer = 0.1; checkBoss(boss);
+      player.vel.y = 8;
+    } else { player.takeDamage(); }
+  }
+
+  // update bullets
+  for (let i=bossBullets.length-1;i>=0;i--) {
+    const b = bossBullets[i];
+    if (!b.alive) { bossBullets.splice(i,1); continue; }
+    b.t += dt; b.mesh.position.addScaledVector(b.vel, dt);
+    b.mesh.rotation.x += dt*4;
+    if (b.t > 3) { b.alive=false; b.mesh.parent?.remove(b.mesh); bossBullets.splice(i,1); continue; }
+    if (player.pos.distanceTo(b.mesh.position) < 0.8) {
+      player.takeDamage();
+      b.alive=false; b.mesh.parent?.remove(b.mesh); bossBullets.splice(i,1);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LEVEL BUILDER
+// ═══════════════════════════════════════════════════════════════════
+function clearScene(scene) {
+  const toRemove = [];
+  scene.traverse(obj => { if (obj !== scene) toRemove.push(obj); });
+  toRemove.forEach(obj => { if(obj.parent) obj.parent.remove(obj); obj.geometry?.dispose(); if(Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose()); else obj.material?.dispose(); });
+  bossBullets = []; bossRef = null;
+}
+
+function makeSkybox(scene, col1, col2) {
+  scene.background = new THREE.Color(col1);
+  scene.fog = new THREE.FogExp2(col2, 0.025);
+}
+
+function addAmbientLights(scene, ambColor, dirColor) {
+  scene.add(new THREE.AmbientLight(ambColor||0x334466, 0.8));
+  const sun = new THREE.DirectionalLight(dirColor||0xaabbff, 1.4);
+  sun.position.set(10,20,10); sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.camera.near=0.1; sun.shadow.camera.far=100;
+  sun.shadow.camera.left=-30; sun.shadow.camera.right=30;
+  sun.shadow.camera.top=30;   sun.shadow.camera.bottom=-30;
+  scene.add(sun);
+}
+
+function addFloor(scene, y, color, emissive, size) {
+  const g = new THREE.BoxGeometry(size||80, 0.4, size||40);
+  const m = new THREE.MeshStandardMaterial({ color:color||0x1a2030, emissive:emissive||0x080e18, roughness:0.8, metalness:0.2 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(0, y||0, 0); mesh.receiveShadow = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCENES
+// ═══════════════════════════════════════════════════════════════════
+const scenes3d = {};
+let playerObj = null;
+let levelPlatforms = [], levelHazards = [], levelGems = [], levelPowerups = [], levelEnemies = [];
+let threeScene = null;
+
+function initLevel(cfg) {
+  if (threeScene) clearScene(threeScene);
+  threeScene = new THREE.Scene();
+  threeScene.add(pMesh);
+  levelPlatforms=[]; levelHazards=[]; levelGems=[]; levelPowerups=[]; levelEnemies=[];
+  G.gems=0; G.totalGems=cfg.gems||0; G.faseNome=cfg.nome||'';
+  setPhase(cfg.nome||''); setGems(0, G.totalGems);
+  showBossBar('',0);
+
+  // sky + lights
+  makeSkybox(threeScene, cfg.skyColor||0x0a0e1a, cfg.fogColor||0x070910);
+  addAmbientLights(threeScene, cfg.ambLight||0x2233aa, cfg.sunLight||0x8899ff);
+
+  // floor
+  if (cfg.hasFloor !== false) addFloor(threeScene, cfg.floorY||0, cfg.floorColor, cfg.floorEmis, cfg.floorSize||100);
+
+  // build level
+  cfg.build(threeScene, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies);
+
+  // player
+  playerObj = makePlayer(threeScene);
+  playerObj.pos.set(cfg.spawnX||0, cfg.spawnY||3, cfg.spawnZ||0);
+  playerObj.vel.set(0,0,0);
+  camYaw = 0;
+
+  // decorative floating particles
+  if (cfg.ambParticles) {
+    for (let i=0; i<cfg.ambParticles; i++) {
+      burst3(Math.random()*60-30, Math.random()*8, Math.random()*20-10, 1, cfg.ambR||0.3,cfg.ambG||0.5,cfg.ambB||1);
+    }
+  }
+
+  showPhaseBanner(cfg.phaseNum, cfg.nome);
+}
+
+// ── FASE 1: PELOTAS ──────────────────────────────────────────────
+scenes3d['fase1'] = {
+  _next:'_cutscene1', _spawnX:-18, _spawnY:3, _spawnZ:0,
+  init() {
+    initLevel({
+      nome:'Pelotas', phaseNum:1, gems:4,
+      skyColor:0x060814, fogColor:0x050712,
+      ambLight:0x223366, sunLight:0x6677cc,
+      floorY:-0.6, floorColor:0x111828, floorEmis:0x050810, floorSize:120,
+      spawnX:-18, spawnY:3, spawnZ:0,
+      ambParticles:30, ambR:0.3, ambG:0.4, ambB:1.0,
+      build(scene, plats, haz, gems, pups, ens) {
+        // MAIN FLOOR
+        const f = makePlatform(scene,-20,0,0, 12,0.6,8, 0x1e2445, 0x0a1030); plats.push(f);
+
+        // ── platforms ──
+        const ps = [
+          [-8,1.8,0, 5,0.5,5],  [-2,3.2,0, 4,0.5,4],
+          [4,4.8,0,  4,0.5,4],  [10,6.2,0, 5,0.5,5],
+          [16,7.5,0, 5,0.5,5],  [22,5.0,0, 4,0.5,4],
+          [28,3.5,0, 5,0.5,5],
+        ];
+        ps.forEach(p => { plats.push(makePlatform(scene,...p, 0x1e2860, 0x0c1840)); });
+
+        // ── gems ──
+        const gpos = [[-8,3.8,0],[4,6.8,0],[16,9.0,0],[28,5.0,0]];
+        gpos.forEach(p => gems.push(makeGem(scene,...p)));
+
+        // ── powerup ──
+        pups.push(makePowerup(scene, 10, 8.2, 0));
+
+        // ── enemies ──
+        ens.push(makeEnemy(scene, -4, 2.5, 0, 'basico'));
+        ens.push(makeEnemy(scene,  6, 4.0, 0, 'basico'));
+        ens.push(makeEnemy(scene, 18, 8.0, 0, 'voador'));
+
+        // ── decorative pillars ──
+        [[-14,4,0],[22,8,0]].forEach(([x,h,z]) => {
+          const pg = new THREE.CylinderGeometry(0.3,0.4,h,8);
+          const pm = new THREE.MeshStandardMaterial({color:0x1a2050,emissive:0x080f28,roughness:0.7});
+          const pmesh = new THREE.Mesh(pg, pm); pmesh.position.set(x,h/2,z); scene.add(pmesh);
         });
+
+        // ── stars ──
+        const sg = new THREE.BufferGeometry();
+        const sv = new Float32Array(300*3);
+        for (let i=0;i<300;i++) { sv[i*3]=Math.random()*120-60; sv[i*3+1]=Math.random()*40+5; sv[i*3+2]=Math.random()*40-40; }
+        sg.setAttribute('position', new THREE.BufferAttribute(sv,3));
+        const sm = new THREE.PointsMaterial({color:0xffffff,size:0.15,transparent:true,opacity:0.7});
+        scene.add(new THREE.Points(sg,sm));
+      }
+    });
+  },
+  update(dt) {
+    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj);
+    updateParticles(dt);
+  },
+  draw() {
+    renderer.render(threeScene, camera);
+  }
+};
+
+// ── CUTSCENE 1 ────────────────────────────────────────────────────
+let cs1T=0, cs1Scene=null;
+scenes3d['_cutscene1'] = {
+  _next:'fase2',
+  init() {
+    cs1T=0;
+    if (threeScene) clearScene(threeScene);
+    threeScene = new THREE.Scene(); threeScene.add(pMesh);
+    threeScene.background = new THREE.Color(0x060810);
+    threeScene.add(new THREE.AmbientLight(0x223355,1));
+    // floating text meshes — just bg particles
+    for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2, 1, 1,0.4,0.7);
+    G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
+  },
+  update(dt) { cs1T+=dt; if(cs1T>3.5) goTo('fase2'); updateParticles(dt); },
+  draw() { renderer.render(threeScene,camera); }
+};
+
+// ── FASE 2: RIO DE JANEIRO ────────────────────────────────────────
+scenes3d['fase2'] = {
+  _next:'_cutscene2', _spawnX:-20, _spawnY:3, _spawnZ:0,
+  init() {
+    initLevel({
+      nome:'Rio de Janeiro', phaseNum:2, gems:5,
+      skyColor:0x060f20, fogColor:0x040c18,
+      ambLight:0x1133aa, sunLight:0x4466ee,
+      floorY:-0.6, floorColor:0x0a1828, floorEmis:0x040c18, floorSize:140,
+      spawnX:-20, spawnY:3, spawnZ:0,
+      build(scene, plats, haz, gems, pups, ens) {
+        // floor with water patches
+        const base = makePlatform(scene,-20,0,0, 10,0.5,8, 0x1a2840, 0x0a1828); plats.push(base);
+        const platforms2 = [
+          [-12,2,0,5,0.5,5], [-6,3.5,0,4,0.5,4], [0,5,0,4,0.5,4],
+          [6,6.5,0,4,0.5,4], [12,5,0,3,0.5,5],   [18,4,0,5,0.5,5],
+          [24,6,0,4,0.5,4],  [30,5,0,5,0.5,5],
+        ];
+        platforms2.forEach(p => plats.push(makePlatform(scene,...p,0x1e3060,0x0c1c40)));
+
+        // water hazards between platforms
+        [[-8,0,0],[2,0,0],[14,0,0],[22,0,0]].forEach(([x,y,z]) => {
+          haz.push(makeHazardTile(scene, x, y, z, 'water'));
+          haz.push(makeHazardTile(scene, x+2, y, z, 'water'));
+        });
+
+        // gems
+        [[-12,4,0],[0,7,0],[12,7,0],[24,8,0],[30,7,0]].forEach(p => gems.push(makeGem(scene,...p)));
+        pups.push(makePowerup(scene,6,8.5,0));
+        pups.push(makePowerup(scene,18,6,0));
+
+        // enemies
+        ens.push(makeEnemy(scene,-10,2.5,0,'basico'));
+        ens.push(makeEnemy(scene, 2,5.5,0,'voador'));
+        ens.push(makeEnemy(scene,12,6.5,0,'voador'));
+        ens.push(makeEnemy(scene,22,5.0,0,'tanque'));
+        ens.push(makeEnemy(scene,30,6.0,0,'basico'));
+
+        // ocean shimmer lights
+        [[-8,1,0],[8,1,0],[22,1,0]].forEach(([x,y,z]) => {
+          const pl = new THREE.PointLight(0x0066ff,1.5,8); pl.position.set(x,y,z); scene.add(pl);
+        });
+      }
+    });
+  },
+  update(dt) {
+    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj);
+    updateParticles(dt);
+  },
+  draw() { renderer.render(threeScene,camera); }
+};
+
+// ── CUTSCENE 2 ────────────────────────────────────────────────────
+let cs2T=0;
+scenes3d['_cutscene2'] = {
+  init() {
+    cs2T=0;
+    if (threeScene) clearScene(threeScene);
+    threeScene = new THREE.Scene(); threeScene.add(pMesh);
+    threeScene.background = new THREE.Color(0x040c06);
+    threeScene.add(new THREE.AmbientLight(0x114422,1));
+    for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2,1,0.3,1,0.5);
+    G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
+  },
+  update(dt) { cs2T+=dt; if(cs2T>3.5) goTo('fase3'); updateParticles(dt); },
+  draw() { renderer.render(threeScene,camera); }
+};
+
+// ── FASE 3: TEFÉ ─────────────────────────────────────────────────
+scenes3d['fase3'] = {
+  _next:'boss', _spawnX:-22, _spawnY:3, _spawnZ:0,
+  init() {
+    initLevel({
+      nome:'Tefé — Amazônia', phaseNum:3, gems:5,
+      skyColor:0x040c08, fogColor:0x020804,
+      ambLight:0x113322, sunLight:0x224422,
+      floorY:-0.6, floorColor:0x0c1a0e, floorEmis:0x060e07, floorSize:160,
+      spawnX:-22, spawnY:3, spawnZ:0,
+      ambParticles:40, ambR:0.2, ambG:0.9, ambB:0.3,
+      build(scene, plats, haz, gems, pups, ens) {
+        const base = makePlatform(scene,-22,0,0, 10,0.5,8, 0x1a2e18, 0x0a1a0a); plats.push(base);
+        const ps3 = [
+          [-14,2,0,5,0.5,5], [-8,3.5,0,4,0.5,4],  [-2,5,0,3,0.5,5],
+          [5,6.5,0,4,0.5,4], [12,5,0,4,0.5,4],     [18,7,0,4,0.5,4],
+          [24,5.5,0,3,0.5,5],[30,4,0,5,0.5,5],      [36,6,0,4,0.5,4],
+        ];
+        ps3.forEach(p => plats.push(makePlatform(scene,...p, 0x1a3020, 0x0c1e12)));
+
+        // lava + water hazards
+        [[-10,0,0],[3,0,0],[16,0,0],[27,0,0]].forEach(([x,y,z]) => {
+          haz.push(makeHazardTile(scene,x,y,z,'lava'));
+          haz.push(makeHazardTile(scene,x+2,y,z,'water'));
+        });
+
+        [[-14,4,0],[-2,7,0],[12,7,0],[24,7.5,0],[36,8,0]].forEach(p => gems.push(makeGem(scene,...p)));
+        pups.push(makePowerup(scene,5,8.5,0));
+
+        ens.push(makeEnemy(scene,-12,2.5,0,'voador'));
+        ens.push(makeEnemy(scene,  0,5.5,0,'tanque'));
+        ens.push(makeEnemy(scene, 10,6.0,0,'voador'));
+        ens.push(makeEnemy(scene, 20,7.5,0,'voador'));
+        ens.push(makeEnemy(scene, 30,4.5,0,'tanque'));
+        ens.push(makeEnemy(scene, 36,6.5,0,'basico'));
+
+        // jungle lights
+        [[0,4,2],[-6,2,-2],[18,6,2]].forEach(([x,y,z]) => {
+          const pl = new THREE.PointLight(0x00ff44, 1.0, 10); pl.position.set(x,y,z); scene.add(pl);
+        });
+      }
+    });
+  },
+  update(dt) {
+    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj);
+    updateParticles(dt);
+  },
+  draw() { renderer.render(threeScene,camera); }
+};
+
+// ── BOSS FASE ─────────────────────────────────────────────────────
+scenes3d['boss'] = {
+  _next:'_vitoria', _spawnX:-10, _spawnY:3, _spawnZ:0,
+  init() {
+    initLevel({
+      nome:'Confronto Final', phaseNum:'', gems:0,
+      skyColor:0x0e0310, fogColor:0x080110,
+      ambLight:0x330022, sunLight:0xaa0044,
+      floorY:0, floorColor:0x1a0820, floorEmis:0x0a0410, floorSize:60,
+      spawnX:-10, spawnY:3, spawnZ:0,
+      build(scene, plats, haz, gems, pups, ens) {
+        // ── arena platforms ──
+        [[-8,2,0,6,0.5,6],[-2,4,0,4,0.5,4],[4,2,0,6,0.5,6],
+         [-6,5,-3,3,0.5,3],[6,5,-3,3,0.5,3]].forEach(p => plats.push(makePlatform(scene,...p,0x2a0820,0x150410)));
+        // edge lights
+        for (let i=0;i<8;i++) {
+          const a=(i/8)*Math.PI*2, r=14;
+          const pl=new THREE.PointLight(0xff0060,0.8,8);
+          pl.position.set(Math.cos(a)*r,0.3,Math.sin(a)*r);
+          scene.add(pl);
+        }
+        // boss
+        const boss = makeBoss(scene, 2, 3.5, 0);
+        // add extra enemies after 5s
+        setTimeout(()=>{
+          if(bossRef&&bossRef.alive){ ens.push(makeEnemy(scene,-8,3.0,0,'voador')); ens.push(makeEnemy(scene,10,3.0,0,'voador')); }
+        },5000);
+      }
+    });
+    showPhaseBanner('','CONFRONTO FINAL');
+  },
+  update(dt) {
+    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, bossRef);
+    updateEnemies(dt, levelEnemies, playerObj);
+    updateBoss(dt, bossRef, playerObj, threeScene);
+    updateParticles(dt);
+  },
+  draw() { renderer.render(threeScene,camera); }
+};
+
+// ── GAME OVER & VITÓRIA (pseudo-scenes) ──────────────────────────
+scenes3d['_gameover'] = {
+  init() {
+    showEndScreen('FIM DA JORNADA','A distância não venceu desta vez.',G.pontos,'#ff3c3c');
+  },
+  update() {
+    if (pressed('Space')||pressed('Enter')) {
+      hideEndScreen(); G.reset(); goTo('fase1');
     }
+  },
+  draw() { if(threeScene) renderer.render(threeScene,camera); }
+};
 
-    function createBoss(x, y, nome, maxHp) {
-        boss = {
-            x: x - 40, y: y - 90, w: 80, h: 90,
-            hp: maxHp, maxHp: maxHp, nome: nome, dir: 1, fase: 1, atTimer: 0, spawnX: x, flash: 0,
-            color: C.BOSS
-        };
-        showBossBar(nome, 100);
+scenes3d['_vitoria'] = {
+  init() {
+    showEndScreen('FELIZ DIA DOS NAMORADOS!','Onde quer que seja, desde que seja com você.',G.pontos,'#ff64b4');
+    // confetti bursts
+    for (let i=0;i<6;i++) setTimeout(()=>{
+      burst3(Math.random()*20-10,8,Math.random()*10-5, 20, Math.random(),Math.random(),Math.random());
+    },i*300);
+  },
+  update(dt) {
+    updateParticles(dt);
+    if (pressed('Space')||pressed('Enter')) {
+      hideEndScreen(); G.reset(); goTo('fase1');
     }
+  },
+  draw() { if(threeScene) renderer.render(threeScene,camera); }
+};
 
-    function createProjectile(x, y, dx) {
-        projectiles.push({ x: x, y: y, r: 6, vx: dx > 0 ? 420 : -420, life: 2.5 });
-    }
+// ── CUTSCENE CANVAS OVERLAYS (on top of 3D) ───────────────────────
+let cutsceneText = '';
+function drawCutsceneText(label1, label2, alpha) {
+  // drawn via DOM overlay (existing phase banner + we re-use it)
+  // nothing needed here — the banner already fires in initLevel
+}
 
-    // ── MAP PARSER ───────────────────────────────────────────────────
-    function loadMap(mapData, offsetY) {
-        platforms = []; hazards = []; enemies = []; collectibles = []; projectiles = []; boss = null;
-        let tw = 64, th = 64;
-        for (let r = 0; r < mapData.length; r++) {
-            for (let c = 0; c < mapData[r].length; c++) {
-                let char = mapData[r][c];
-                let px = c * tw; let py = offsetY + r * th;
-                if (char === "=") platforms.push({ x: px, y: py, w: 64, h: 20, type: "plat" });
-                else if (char === "_") platforms.push({ x: px, y: py + 26, w: 64, h: 12, type: "plat2" });
-                else if (char === "#") platforms.push({ x: px, y: py, w: 64, h: 64, type: "wall" });
-                else if (char === "W") hazards.push({ x: px, y: py + 24, w: 64, h: 40, type: "agua", c: C.AGUA });
-                else if (char === "L") hazards.push({ x: px, y: py + 24, w: 64, h: 40, type: "lava", c: C.LAVA });
-                else if (char === "O") collectibles.push({ x: px + 32, y: py + 32, w: 28, h: 28, type: "lembranca", t: rand(0, 5) });
-                else if (char === "*") collectibles.push({ x: px + 32, y: py + 32, w: 24, h: 24, type: "powerup", t: rand(0, 5) });
-            }
-        }
-    }
+// ═══════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════
+let menuState = 'menu'; // 'menu' | 'playing'
+let currentSceneKey = null;
 
-    function setupBackground(r, g, b, stars) {
-        bgColors = [r, g, b];
-        bgStars = [];
-        if (stars) {
-            for (let i = 0; i < 140; i++) {
-                bgStars.push({
-                    x: rand(-200, 4000), y: rand(0, 720), r: rand(0.4, 2.5),
-                    baseOp: rand(0.1, 0.6), t: rand(0, 6.28), speed: rand(0.3, 1.5)
-                });
-            }
-        }
-    }
+function startScene(key) {
+  currentSceneKey = key;
+  activeScene = scenes3d[key];
+  if (activeScene) activeScene.init?.();
+}
 
-    // ── SCENARIOS ────────────────────────────────────────────────────
-    function loadScene(name) {
-        scene = name;
-        texts = []; particles = [];
-        showBossBar("", 0);
-        player = null;
+// Start with menu
+menuOv?.addEventListener('click', startGame);
+window.addEventListener('keydown', e => { if (menuState==='menu' && e.code==='Space') startGame(); });
+window.addEventListener('keydown', e => {
+  if (menuState==='playing' && (e.code==='Space'||e.code==='Enter') && $('end-overlay')?.classList.contains('show')) {
+    // handled inside scene update
+  }
+});
+function startGame() {
+  menuState = 'playing';
+  menuOv?.classList.add('hide');
+  G.reset();
+  startScene('fase1');
+}
 
-        if (name === "menu") {
-            setupBackground(7, 9, 15, true);
-        }
-        else if (name === "fase1") {
-            ESTADO.faseAtual = "fase1"; ESTADO.lembrancas = 0;
-            window._totalMem = 3; window._faseNome = "Pelotas"; window._proxFase = "cutscene1";
-            showPhaseBanner(1, "Pelotas");
-            setupBackground(15, 18, 35, true);
-            const mapa = [
-                "                                                           ",
-                "                                                           ",
-                "                                          * ",
-                "                                          _                ",
-                "                          O                               O      ",
-                "               __                        __                ____     ",
-                "                                                           ",
-                "      O                                                    ",
-                "     __                                                    ",
-                "                                                           ",
-                "=====    ====    ======     ====     ====     ====     ====   =====",
-            ];
-            loadMap(mapa, 720 - mapa.length * 64);
-            createPlayer(160, 720 - 200);
-            createEnemy(480, 720 - 128, "basico");
-            createEnemy(720, 720 - 128, "basico");
-            createEnemy(1000, 720 - 128, "voador");
-            texts.push({ text: "7 de Set. 2024 · O primeiro oi…", x: 640, y: 80, c: "rgba(180,180,200,0.6)" });
-        }
-        else if (name === "cutscene1") {
-            setupBackground(10, 10, 18, false);
-            setTimeout(() => loadScene("fase2"), 3200);
-        }
-        else if (name === "fase2") {
-            ESTADO.faseAtual = "fase2"; ESTADO.lembrancas = 0;
-            window._totalMem = 4; window._faseNome = "Rio de Janeiro"; window._proxFase = "cutscene2";
-            showPhaseBanner(2, "Rio de Janeiro");
-            setupBackground(10, 30, 55, false);
-            const mapa = [
-                "                                                                 ",
-                "                                                                 ",
-                "                                    * O         ",
-                "                                    _                        ____        ",
-                "           O                                 O                           ",
-                "          ___                        __       ___                        ",
-                "                   O                                                     ",
-                "                  __                                                     ",
-                "                                                                 ",
-                "====  WWW  ==   WWWWW  ====   ==  WWWWW   ====  WWWWW  ===  WWWW   =====",
-            ];
-            loadMap(mapa, 720 - mapa.length * 64);
-            createPlayer(120, 720 - 200);
-            createEnemy(360, 720 - 128, "basico");
-            createEnemy(600, 720 - 128, "voador");
-            createEnemy(860, 720 - 128, "voador");
-            createEnemy(1100, 720 - 128, "tanque");
-            texts.push({ text: "O Rio que une caminhos", x: 640, y: 80, c: "rgba(140,180,220,0.6)" });
-        }
-        else if (name === "cutscene2") {
-            setupBackground(8, 18, 8, false);
-            setTimeout(() => loadScene("fase3"), 3200);
-        }
-        else if (name === "fase3") {
-            ESTADO.faseAtual = "fase3"; ESTADO.lembrancas = 0;
-            window._totalMem = 3; window._faseNome = "Tefé — Amazônia"; window._proxFase = "boss_fase3";
-            showPhaseBanner(3, "Tefé — Amazônia");
-            setupBackground(8, 40, 18, false);
-            const mapa = [
-                "                                                                      ",
-                "                                                                      ",
-                "                                                  O                           ",
-                "                                                 ___                          ",
-                "                    O                    * ",
-                "                   ___                   _                    O               ",
-                "         O                                               _    ___               ",
-                "        ___                                                                   ",
-                "                                                                      ",
-                "====  WWWWW  =   LLLL  ===  WWWWWW  ==  LLLL  ===  WWWWWW  =  LLLL  ===  ===",
-            ];
-            loadMap(mapa, 720 - mapa.length * 64);
-            createPlayer(120, 720 - 200);
-            createEnemy(400, 720 - 128, "voador");
-            createEnemy(650, 720 - 128, "tanque");
-            createEnemy(920, 720 - 128, "voador");
-            createEnemy(1180, 720 - 128, "basico");
-            createEnemy(1420, 720 - 128, "voador");
-            texts.push({ text: "Onde a floresta guarda segredos", x: 640, y: 80, c: "rgba(120,200,140,0.6)" });
-        }
-        else if (name === "boss_fase3") {
-            ESTADO.faseAtual = "boss_fase3"; window._faseNome = "BOSS";
-            showPhaseBanner("", "CONFRONTO FINAL");
-            setupBackground(20, 5, 25, true);
-            const mapa = [
-                "                                                                ",
-                "                                                                ",
-                "                                                                ",
-                "          __                  __                  __            ",
-                "                                                                ",
-                "################################################################",
-            ];
-            loadMap(mapa, 720 - mapa.length * 64);
-            createPlayer(160, 720 - 180);
-            createBoss(700, 720 - 64, "GUARDIÃO DAS SOMBRAS", 14);
-            
-            // Inimigos extras no boss após 5s
-            setTimeout(() => {
-                if (scene === "boss_fase3" && boss) {
-                    createEnemy(280, 720 - 160, "voador");
-                    createEnemy(920, 720 - 160, "voador");
-                }
-            }, 5000);
-            
-            texts.push({ text: "⚠  CHEFE FINAL  ⚠", x: 640, y: 80, c: "rgba(255,80,80,0.8)" });
-        }
-        else if (name === "gameover" || name === "vitoria") {
-            setupBackground(name === "gameover" ? 25 : 10, name === "gameover" ? 5 : 18, name === "gameover" ? 5 : 12, name === "vitoria");
-        }
-    }
+// Initial: start pre-loading Three.js (triggers scene fog/sky) in background
+threeScene = new THREE.Scene();
+threeScene.background = new THREE.Color(0x07090f);
+threeScene.add(new THREE.AmbientLight(0x112244,0.5));
+threeScene.add(pMesh);
+renderer.render(threeScene, camera);
 
-    // ── GAME LOOP PRINCIPAL ──────────────────────────────────────────
-    let lastTime = 0;
-    function gameLoop(timestamp) {
-        let dt = (timestamp - lastTime) / 1000;
-        if (dt > 0.1) dt = 0.1; // Limite de dt p/ evitar bugs de lag
-        lastTime = timestamp;
-        gameTime += dt;
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
 
-        update(dt);
-        draw(ctx);
-        
-        // Limpa estado the teclas press
-        for (let k in pressedThisFrame) pressedThisFrame[k] = false;
-        
-        requestAnimationFrame(gameLoop);
-    }
+  if (pendingScene) {
+    const key = pendingScene; pendingScene = null;
+    startScene(key);
+  }
 
-    function update(dt) {
-        if (shakeTimer > 0) shakeTimer -= dt;
+  if (activeScene) {
+    activeScene.update?.(dt);
+    activeScene.draw?.();
+  } else {
+    renderer.render(threeScene, camera);
+  }
 
-        if (scene === "menu" || scene === "gameover" || scene === "vitoria") {
-            if (isKeyPressed("space") || isKeyPressed("enter")) {
-                if (scene === "vitoria") ESTADO.reset();
-                if (scene === "menu" || scene === "vitoria") { ESTADO.reset(); loadScene("fase1"); }
-                if (scene === "gameover") loadScene("menu");
-            }
-            if (scene === "vitoria") {
-                if (Math.random() < 0.1) {
-                    burst(rand(0, 1280), -20, 1, "rgb(255,100,180)", 10);
-                }
-            }
-        }
-
-        // Lógica In-Game
-        if (player) {
-            player.update(dt);
-            
-            // Suave movimento de câmera
-            cam.x = lerp(cam.x, player.x + 180, dt * 5);
-            cam.y = lerp(cam.y, 360, dt * 3);
-
-            // Atualiza inimigos
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                let e = enemies[i];
-                if (e.flash > 0) e.flash -= dt;
-                
-                if (e.type === "voador") {
-                    e.vt += dt;
-                    e.x += e.dir * e.vel * dt;
-                    e.y += Math.sin(e.vt * 3) * 1.1;
-                    if (Math.abs(e.x - e.spawnX) > 200) e.dir *= -1;
-                } else {
-                    e.x += e.dir * e.vel * dt;
-                    if (Math.abs(e.x - e.spawnX) > 250) e.dir *= -1;
-                }
-                
-                if (e.y > 1600) { e.hp = 0; }
-
-                if (AABB(player, e)) player.sofrerDano();
-
-                if (e.hp <= 0) {
-                    ESTADO.pontos += e.type === "tanque" ? 200 : (e.type === "voador" ? 80 : 50);
-                    ESTADO.combo++;
-                    ESTADO.poder = Math.min(ESTADO.poder + 12, 100);
-                    if (ESTADO.combo >= 3) showCombo("×" + ESTADO.combo + " COMBO!");
-                    burst(e.x + e.w/2, e.y + e.h/2, 16, e.color, 8);
-                    enemies.splice(i, 1);
-                }
-            }
-
-            // Atualiza Boss
-            if (boss) {
-                if (boss.flash > 0) boss.flash -= dt;
-                let spd = boss.fase === 2 ? 150 : 85;
-                boss.x += boss.dir * spd * dt;
-                if (Math.abs(boss.x - boss.spawnX) > 330) boss.dir *= -1;
-                
-                boss.atTimer += dt;
-                let cd = boss.fase === 2 ? 1.1 : 2.0;
-                if (boss.atTimer >= cd) {
-                    boss.atTimer = 0;
-                    createProjectile(boss.x + boss.w/2, boss.y + boss.h/2, -boss.dir);
-                    if (boss.fase === 2) setTimeout(() => createProjectile(boss.x + boss.w/2, boss.y + boss.h/2, boss.dir), 280);
-                }
-
-                if (AABB(player, boss)) {
-                    // Pulo no boss = dano, caso contrário jogador leva dano
-                    if (!player.isGrounded && player.vy > 0 && player.y + player.h < boss.y + boss.h/2) {
-                        boss.hp -= 1; boss.flash = 0.1; player.vy = -600;
-                        burst(boss.x + boss.w/2, boss.y, 8, "rgb(220,0,80)");
-                    } else {
-                        player.sofrerDano();
-                    }
-                }
-
-                if (boss.hp < boss.maxHp * 0.4 && boss.fase === 1) {
-                    boss.fase = 2; boss.color = "rgb(255,0,80)";
-                    shake(20); showCombo("FÚRIA DO CHEFE!");
-                }
-                
-                showBossBar(boss.nome, Math.max(0, (boss.hp / boss.maxHp) * 100));
-
-                if (boss.hp <= 0) {
-                    ESTADO.pontos += 1000; ESTADO.poder = 100;
-                    burst(boss.x + boss.w/2, boss.y + boss.h/2, 40, "rgb(255,80,150)", 12);
-                    showBossBar(boss.nome, 0); boss = null;
-                    showCombo("BOSS DERROTADO!");
-                    setTimeout(() => loadScene("vitoria"), 1200);
-                }
-            }
-
-            // Atualiza Projéteis
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i];
-                p.x += p.vx * dt;
-                p.life -= dt;
-                
-                // Hack rápido de colisão projetil vs jogador em formato circulo
-                if (dist({x:p.x, y:p.y}, {x:player.x+player.w/2, y:player.y+player.h/2}) < p.r + player.w/2) {
-                    player.sofrerDano();
-                    p.life = 0;
-                }
-                if (p.life <= 0) projectiles.splice(i, 1);
-            }
-        }
-
-        // Partículas
-        for (let i = particles.length - 1; i >= 0; i--) {
-            let p = particles[i];
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.life -= dt / p.maxLife;
-            if (p.life <= 0) particles.splice(i, 1);
-        }
-    }
-
-    function draw(ctx) {
-        // Fundo
-        ctx.fillStyle = `rgb(${bgColors[0]}, ${bgColors[1]}, ${bgColors[2]})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Estrelas (Fundo Paralaxe estático)
-        for (let s of bgStars) {
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-            let op = s.baseOp + 0.5 * Math.abs(Math.sin(gameTime * s.speed + s.t));
-            ctx.fillStyle = `rgba(255,255,255,${op})`;
-            ctx.fill();
-        }
-
-        // Cenário Câmera
-        ctx.save();
-        if (shakeTimer > 0) {
-            ctx.translate(rand(-shakeIntensity, shakeIntensity), rand(-shakeIntensity, shakeIntensity));
-        }
-        
-        // Se estiver num mapa, aplica offset da câmera
-        let noCamScenes = ["menu", "cutscene1", "cutscene2", "gameover", "vitoria"];
-        if (!noCamScenes.includes(scene)) {
-            ctx.translate(-cam.x + 640, -cam.y + 360);
-        }
-
-        // Plataformas / Paredes
-        for (let p of platforms) {
-            ctx.fillStyle = p.type === "plat" ? C.PLAT : (p.type === "plat2" ? C.PLAT2 : "rgb(25,28,48)");
-            ctx.strokeStyle = p.type === "plat" ? "rgb(80,90,130)" : "rgb(60,120,180)";
-            ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, p.type === "plat" ? 5 : 4);
-            ctx.fill(); ctx.stroke();
-        }
-
-        // Hazards (Lava, Água)
-        for (let h of hazards) {
-            ctx.fillStyle = h.c;
-            ctx.fillRect(h.x, h.y, h.w, h.h);
-        }
-
-        // Coletáveis
-        for (let c of collectibles) {
-            let offset = Math.sin(gameTime * (c.type === "powerup" ? 4 : 3) + c.t) * 8;
-            ctx.beginPath();
-            ctx.arc(c.x, c.y + offset, c.w / 2, 0, Math.PI * 2);
-            if (c.type === "lembranca") {
-                ctx.fillStyle = `rgb(255, ${50+30*Math.sin(gameTime*4)}, ${150+50*Math.cos(gameTime*3)})`;
-            } else {
-                ctx.fillStyle = `rgb(255, ${180+70*Math.sin(gameTime*6)}, 0)`;
-            }
-            ctx.fill();
-        }
-
-        // Inimigos
-        for (let e of enemies) {
-            ctx.fillStyle = e.flash > 0 ? "white" : e.color;
-            ctx.strokeStyle = "rgb(255,60,60)"; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.roundRect(e.x, e.y, e.w, e.h, 3);
-            ctx.fill(); ctx.stroke();
-            // HP Bar
-            let pct = e.hp / e.maxHp;
-            ctx.fillStyle = "rgb(200, 40, 40)";
-            ctx.fillRect(e.x + (e.w - e.w)/2, e.y - 10, e.w * pct, 4);
-        }
-
-        // Boss
-        if (boss) {
-            ctx.fillStyle = boss.flash > 0 ? "white" : boss.color;
-            ctx.strokeStyle = "rgb(255,80,150)"; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 6);
-            ctx.fill(); ctx.stroke();
-        }
-
-        // Jogador
-        if (player) player.draw(ctx);
-
-        // Projéteis
-        for (let p of projectiles) {
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = C.BULLET; ctx.fill();
-        }
-
-        // Partículas
-        for (let p of particles) {
-            ctx.globalAlpha = p.life;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = p.color; ctx.fill();
-            ctx.globalAlpha = 1.0;
-        }
-
-        // Textos das fases in-game
-        ctx.textAlign = "center";
-        for (let t of texts) {
-            ctx.font = "22px sans-serif";
-            ctx.fillStyle = t.c;
-            // Posições X são absolutas na tela (não acompanham câmera se colocar após restore)
-            // Aqui estamos dentro do save() da câmera, o que é um mini-bug se for texto fixo,
-            // então vamos desenhar os textos fixos DEPOIS do restore.
-        }
-
-        ctx.restore(); // FIM DO DESENHO MUNDO (Com câmera)
-
-        // Textos Fixos In-Game (Fora da Câmera)
-        ctx.textAlign = "center";
-        for (let t of texts) {
-            ctx.font = "bold 22px Arial";
-            ctx.fillStyle = t.c;
-            ctx.fillText(t.text, t.x, t.y);
-        }
-
-        // Cenas GUI Puras (Menus, Cutscenes, etc)
-        if (scene === "menu") {
-            ctx.fillStyle = "rgb(255,80,170)";
-            ctx.font = "bold 58px Arial";
-            let scale = 1 + 0.012 * Math.sin(gameTime * 2);
-            ctx.save(); ctx.translate(640, 720 * 0.27); ctx.scale(scale, scale);
-            ctx.fillText("A JORNADA DE SOFIA", 0, 0); ctx.restore();
-
-            ctx.fillStyle = "rgb(160,140,180)"; ctx.font = "20px Arial";
-            ctx.fillText("Uma história de amor em pixels", 640, 720 * 0.39);
-
-            ctx.fillStyle = "rgb(120,130,160)"; ctx.font = "17px Arial";
-            ctx.fillText("←→  Mover   ESPAÇO  Pular", 640, 720 * 0.55);
-            ctx.fillText("X  Pulso de Energia  (30 poder)", 640, 720 * 0.60);
-            ctx.fillText("Z  Escudo  (20 poder)", 640, 720 * 0.65);
-
-            if (Math.floor(gameTime * 2) % 2 === 0) {
-                ctx.fillStyle = "white"; ctx.font = "bold 28px Arial";
-                ctx.fillText("[ PRESSIONE ESPAÇO ]", 640, 720 * 0.78);
-            }
-        }
-        else if (scene === "cutscene1") {
-            ctx.fillStyle = "rgb(255,200,220)"; ctx.font = "bold 44px Arial";
-            ctx.fillText("A primeira mensagem", 640, 720 * 0.40);
-            ctx.fillText("cruzou o país…", 640, 720 * 0.47);
-            ctx.fillStyle = "rgb(120,140,180)"; ctx.font = "22px Arial";
-            ctx.fillText("De Pelotas ao Rio de Janeiro", 640, 720 * 0.62);
-        }
-        else if (scene === "cutscene2") {
-            ctx.fillStyle = "rgb(180,255,200)"; ctx.font = "bold 44px Arial";
-            ctx.fillText("E então, dois caminhos", 640, 720 * 0.40);
-            ctx.fillText("se tornaram um.", 640, 720 * 0.47);
-            ctx.fillStyle = "rgb(100,170,120)"; ctx.font = "22px Arial";
-            ctx.fillText("Próximo destino: Tefé — Amazônia", 640, 720 * 0.62);
-        }
-        else if (scene === "gameover") {
-            ctx.fillStyle = "rgb(255,60,60)"; ctx.font = "bold 62px Arial";
-            ctx.fillText("FIM DA JORNADA", 640, 720 * 0.35);
-            ctx.fillStyle = "rgb(200,160,160)"; ctx.font = "26px Arial";
-            ctx.fillText("Pontuação: " + ESTADO.pontos, 640, 720 * 0.50);
-            ctx.fillStyle = "rgb(160,100,100)"; ctx.font = "20px Arial";
-            ctx.fillText("A distância não venceu desta vez.", 640, 720 * 0.60);
-            if (Math.floor(gameTime * 2) % 2 === 0) {
-                ctx.fillStyle = "rgb(220,100,100)"; ctx.font = "bold 24px Arial";
-                ctx.fillText("[ ESPAÇO ] tentar de novo", 640, 720 * 0.74);
-            }
-        }
-        else if (scene === "vitoria") {
-            ctx.fillStyle = "rgb(255,100,180)"; ctx.font = "bold 52px Arial";
-            ctx.fillText("FELIZ DIA DOS NAMORADOS!", 640, 720 * 0.24);
-            ctx.fillStyle = "rgb(255,220,100)"; ctx.font = "26px Arial";
-            ctx.fillText("Pontuação Final:  " + ESTADO.pontos, 640, 720 * 0.42);
-            ctx.fillStyle = "rgb(220,230,255)"; ctx.font = "26px Arial";
-            ctx.fillText("De Pelotas ao Rio, e agora em Tefé.", 640, 720 * 0.55);
-            ctx.fillText("Onde quer que seja, desde que seja com você.", 640, 720 * 0.60);
-            
-            ctx.fillStyle = "rgb(255,120,180)";
-            let scale = 1 + 0.06 * Math.sin(gameTime * 3);
-            ctx.save(); ctx.translate(640, 720 * 0.77); ctx.scale(scale, scale);
-            ctx.fillText("Com amor.  ♥", 0, 0); ctx.restore();
-        }
-    }
-
-    // ── INICIALIZAR ──────────────────────────────────────────────────
-    loadScene("menu");
-    requestAnimationFrame(gameLoop);
-
-}); // fim do window.addEventListener("load", ...)
+  clearKeys();
+}
+requestAnimationFrame(loop);
