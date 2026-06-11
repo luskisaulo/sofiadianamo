@@ -97,6 +97,10 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
+// ── CORREÇÃO DE VAZAMENTO DE PIXELS NA SOFIA ──
+ARTES.sofia.magFilter = THREE.NearestFilter;
+ARTES.sofia.minFilter = THREE.NearestFilter;
+
 // Configuração do Spritesheet da Sofia (4x4)
 ARTES.sofia.wrapS = THREE.RepeatWrapping;
 ARTES.sofia.wrapT = THREE.RepeatWrapping;
@@ -210,10 +214,12 @@ function makePlayer(scene) {
   group.add(body);
 
   const shieldG = new THREE.TorusGeometry(0.8, 0.04, 8, 32);
-  const shieldM = new THREE.MeshStandardMaterial({ color:0x00f5ff, emissive:0x00c8ff, emissiveIntensity:1.2, transparent:true, opacity:0 });
+  // ── CORREÇÃO DO CORTE DA PERSONAGEM: depthWrite = false ──
+  const shieldM = new THREE.MeshStandardMaterial({ color:0x00f5ff, emissive:0x00c8ff, emissiveIntensity:1.2, transparent:true, opacity:0, depthWrite:false });
   const shieldMesh = new THREE.Mesh(shieldG, shieldM);
   shieldMesh.rotation.x = Math.PI/2;
   shieldMesh.position.y = 0.8;
+  shieldMesh.visible = false; // Esconde enquanto não está ativo
   group.add(shieldMesh);
 
   const glow = new THREE.PointLight(0xff3fa4, 1.0, 4);
@@ -330,7 +336,6 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // LÓGICA DE ANIMAÇÃO DO SPRITESHEET (Caminhada)
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.12) { 
@@ -338,12 +343,11 @@ function makePlayer(scene) {
           this.currentFrame = (this.currentFrame + 1) % 4; 
         }
       } else if (!this.onGround) {
-        this.currentFrame = 3; // Frame de pulo
+        this.currentFrame = 3;
       } else {
-        this.currentFrame = 0; // Frame parada
+        this.currentFrame = 0;
       }
       
-      // Inversão e Aplicação do Quadro
       if (moveX < -0.1) {
         this.spriteMat.map.repeat.x = -1/4;
       } else if (moveX > 0.1) {
@@ -358,6 +362,8 @@ function makePlayer(scene) {
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
+      this.shieldMesh.visible = this.shieldM.opacity > 0.01; // Desliga completamente se não estiver visível
+      
       if (this.shielded) { this.glow.color.set(0x00f5ff); } else { this.glow.color.set(0xff3fa4); }
 
       this.shadow.position.set(this.pos.x, this.pos.y - FEET + 0.02, this.pos.z);
