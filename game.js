@@ -72,24 +72,23 @@ const clock = new THREE.Clock();
 const textureLoader = new THREE.TextureLoader();
 
 const ARTES = {
-  // 🧍 PERSONAGENS (ARQUIVOS .PNG COM FUNDO TRANSPARENTE)
-  // Crie imagens quadradas (ex: 512x512px)
+  // 🧍 PERSONAGENS
   sofia: textureLoader.load('assets/sofia.png'),
   lucas: textureLoader.load('assets/lucas_saulo.png'),
   
-  // 👾 VILÕES (ARQUIVOS .PNG COM FUNDO TRANSPARENTE)
+  // 👾 VILÕES
   vilaoPelotas: textureLoader.load('assets/vilao_pelotas.png'),
   vilaoRio: textureLoader.load('assets/vilao_rio.png'),
   vilaoTefe: textureLoader.load('assets/vilao_tefe.png'),
   bossGuardiao: textureLoader.load('assets/boss_guardiao.png'),
 
-  // 🌆 FUNDOS DE TELA / CÉUS (ARQUIVOS .JPG GRANDES, EX: 1920x1080)
+  // 🌆 FUNDOS DE TELA
   fundoPelotas: textureLoader.load('assets/fundo_pelotas.jpg'),
   fundoRio: textureLoader.load('assets/fundo_rio.jpg'),
   fundoTefe: textureLoader.load('assets/fundo_tefe.jpg'),
   fundoBoss: textureLoader.load('assets/fundo_boss.jpg'),
 
-  // 🧱 TEXTURAS DO CHÃO (ARQUIVOS .JPG QUADRADOS QUE SE REPETEM, EX: 512x512)
+  // 🧱 TEXTURAS DO CHÃO
   chaoAsfalto: textureLoader.load('assets/chao_asfalto.jpg'),
   chaoAreia: textureLoader.load('assets/chao_areia.jpg'),
   chaoGrama: textureLoader.load('assets/chao_grama.jpg'),
@@ -98,11 +97,17 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// Faz o chão se repetir infinitamente em vez de esticar uma vez só
+// Configuração do Spritesheet da Sofia (4x4)
+ARTES.sofia.wrapS = THREE.RepeatWrapping;
+ARTES.sofia.wrapT = THREE.RepeatWrapping;
+ARTES.sofia.repeat.set(1/4, 1/4); // Corta 1 quadro da grade 4x4
+ARTES.sofia.offset.set(0, 3/4);   // Começa no quadro superior esquerdo
+
+// Repetição para os chãos
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8); // Ajuste esse número se a textura ficar muito grande ou pequena
+  tex.repeat.set(8, 8);
 });
 
 // ── Particle system ───────────────────────────────────────────────
@@ -142,11 +147,11 @@ function updateParticles(dt) {
 function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   const g = new THREE.BoxGeometry(w, h, d);
   const m = new THREE.MeshStandardMaterial({
-    color: color||0xffffff, // Fica branco se tiver imagem, para não alterar a cor da arte
+    color: color||0xffffff,
     roughness: 0.8, metalness: 0.1,
   });
   
-  if (textureMap) m.map = textureMap; // APLICA A TEXTURA SE EXISTIR
+  if (textureMap) m.map = textureMap;
   else { m.color.set(color||0x2a3060); m.emissive.set(emissive||0x101830); m.emissiveIntensity = 0.3; }
 
   const mesh = new THREE.Mesh(g, m);
@@ -154,7 +159,6 @@ function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   mesh.receiveShadow = true; mesh.castShadow = true;
   scene.add(mesh);
   
-  // top edge glow strip (mantido para charme visual)
   const eg = new THREE.BoxGeometry(w, 0.08, d);
   const em = new THREE.MeshStandardMaterial({ color:0x6080ff, emissive:0x3050cc, emissiveIntensity:1.2, roughness:0.2 });
   const es = new THREE.Mesh(eg, em);
@@ -199,14 +203,12 @@ function makeHazardTile(scene, x,y,z, type) {
 function makePlayer(scene) {
   const group = new THREE.Group();
 
-  // ⚠️ AQUI ESTAMOS APLICANDO A ARTE DA SOFIA (2D SPRITE)
   const spriteMat = new THREE.SpriteMaterial({ map: ARTES.sofia, color: 0xffffff, transparent: true });
   const body = new THREE.Sprite(spriteMat);
-  body.scale.set(1.5, 1.8, 1); // Tamanho da boneca
-  body.position.y = 0.9; // Altura em relação ao centro
+  body.scale.set(1.5, 1.8, 1);
+  body.position.y = 0.9;
   group.add(body);
 
-  // Shield ring 
   const shieldG = new THREE.TorusGeometry(0.8, 0.04, 8, 32);
   const shieldM = new THREE.MeshStandardMaterial({ color:0x00f5ff, emissive:0x00c8ff, emissiveIntensity:1.2, transparent:true, opacity:0 });
   const shieldMesh = new THREE.Mesh(shieldG, shieldM);
@@ -214,7 +216,6 @@ function makePlayer(scene) {
   shieldMesh.position.y = 0.8;
   group.add(shieldMesh);
 
-  // Body glow light
   const glow = new THREE.PointLight(0xff3fa4, 1.0, 4);
   glow.position.y = 0.8;
   group.add(glow);
@@ -231,6 +232,7 @@ function makePlayer(scene) {
     group, body, spriteMat, shieldMesh, shieldM, glow, shadow,
     vel: new THREE.Vector3(), onGround: false, facingAngle: 0,
     invTimer: 0, shieldTimer:0, shieldCD:0, pulsoCD:0, blinkOn: true, blinkTimer:0,
+    frameTimer: 0, currentFrame: 0,
 
     get pos() { return group.position; },
     get shielded() { return this.shieldTimer > 0; },
@@ -326,11 +328,33 @@ function makePlayer(scene) {
       if (this.pos.y < -15) { this.takeDamage(); if (G.vidas > 0) { this.pos.set(activeScene._spawnX||0, 3, activeScene._spawnZ||0); this.vel.set(0,0,0); } }
 
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
-      this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9; // Pulo de animação de andar
+      this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
+
+      // LÓGICA DE ANIMAÇÃO DO SPRITESHEET (Caminhada)
+      if (moving && this.onGround) {
+        this.frameTimer += dt;
+        if (this.frameTimer > 0.12) { 
+          this.frameTimer = 0;
+          this.currentFrame = (this.currentFrame + 1) % 4; 
+        }
+      } else if (!this.onGround) {
+        this.currentFrame = 3; // Frame de pulo
+      } else {
+        this.currentFrame = 0; // Frame parada
+      }
       
-      // Inverte imagem quando anda pra esquerda
-      if (moveX < -0.1) this.spriteMat.map.repeat.x = -1;
-      else if (moveX > 0.1) this.spriteMat.map.repeat.x = 1;
+      // Inversão e Aplicação do Quadro
+      if (moveX < -0.1) {
+        this.spriteMat.map.repeat.x = -1/4;
+      } else if (moveX > 0.1) {
+        this.spriteMat.map.repeat.x = 1/4;
+      }
+
+      if (this.spriteMat.map.repeat.x < 0) {
+        this.spriteMat.map.offset.x = (this.currentFrame + 1) / 4;
+      } else {
+        this.spriteMat.map.offset.x = this.currentFrame / 4;
+      }
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
@@ -369,7 +393,6 @@ function makeEnemy(scene, x,y,z, tipo, textureArte) {
   };
   const cfg = cfgs[tipo]||cfgs.basico;
   
-  // ⚠️ AQUI ESTAMOS APLICANDO A ARTE DO VILÃO (2D SPRITE)
   const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true });
   const mesh = new THREE.Sprite(m);
   mesh.scale.set(1.5, 1.5, 1);
@@ -394,12 +417,15 @@ function killEnemy(e) {
 function updateEnemies(dt, enemies, player) {
   enemies.forEach(e => {
     if (!e.alive) return;
-    if (e.flashTimer > 0) { e.flashTimer -= dt; e.m.color.setHex(e.flashTimer > 0 ? 0xff0000 : 0xffffff); } // Pisca vermelho no dano
+    if (e.flashTimer > 0) { e.flashTimer -= dt; e.m.color.setHex(e.flashTimer > 0 ? 0xff0000 : 0xffffff); }
     e.t += dt;
     if (e.tipo === 'voador') { e.mesh.position.x = e.spawnX + Math.sin(e.t * e.vel * 0.5) * e.range; e.mesh.position.y = e.spawnY + Math.sin(e.t * 1.8) * 0.8; } 
     else {
       e.mesh.position.x += e.dir * e.vel * dt;
-      if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { e.dir *= -1; e.m.map.repeat.x *= -1; } // Vira imagem ao bater e voltar
+      if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
+        e.dir *= -1; 
+        if(e.m.map) e.m.map.repeat.x *= -1; 
+      }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
   });
@@ -412,7 +438,6 @@ let bossRef = null;
 function makeBoss(scene, x,y,z) {
   const g = new THREE.Group();
   
-  // ⚠️ AQUI ESTAMOS APLICANDO A ARTE DO BOSS (2D SPRITE GIGANTE)
   const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true });
   const body  = new THREE.Sprite(bodyM);
   body.scale.set(4, 4, 1);
@@ -521,7 +546,6 @@ function initLevel(cfg) {
   G.gems=0; G.totalGems=cfg.gems||0; G.faseNome=cfg.nome||'';
   setPhase(cfg.nome||''); setGems(0, G.totalGems); showBossBar('',0);
 
-  // ⚠️ PASSANDO A IMAGEM DE FUNDO DA FASE E DO CHÃO
   makeSkybox(threeScene, cfg.skyColor, cfg.fogColor, cfg.bgImage);
   addAmbientLights(threeScene, cfg.ambLight, cfg.sunLight);
   if (cfg.hasFloor !== false) addFloor(threeScene, cfg.floorY, cfg.floorSize, cfg.floorImg);
@@ -550,7 +574,6 @@ scenes3d['fase1'] = {
 
         const gpos = [[-8,3.8,0],[4,6.8,0],[16,9.0,0],[28,5.0,0]]; gpos.forEach(p => gems.push(makeGem(scene,...p))); pups.push(makePowerup(scene, 10, 8.2, 0));
 
-        // Inimigos com arte de Pelotas
         ens.push(makeEnemy(scene, -4, 2.5, 0, 'basico', ARTES.vilaoPelotas));
         ens.push(makeEnemy(scene,  6, 4.0, 0, 'basico', ARTES.vilaoPelotas));
         ens.push(makeEnemy(scene, 18, 8.0, 0, 'voador', ARTES.vilaoPelotas));
@@ -583,7 +606,6 @@ scenes3d['fase2'] = {
 
         [[-12,4,0],[0,7,0],[12,7,0],[24,8,0],[30,7,0]].forEach(p => gems.push(makeGem(scene,...p))); pups.push(makePowerup(scene,6,8.5,0)); pups.push(makePowerup(scene,18,6,0));
 
-        // Inimigos com arte do Rio
         ens.push(makeEnemy(scene,-10,2.5,0,'basico', ARTES.vilaoRio));
         ens.push(makeEnemy(scene, 2,5.5,0,'voador', ARTES.vilaoRio));
         ens.push(makeEnemy(scene,12,6.5,0,'voador', ARTES.vilaoRio));
@@ -618,7 +640,6 @@ scenes3d['fase3'] = {
 
         [[-14,4,0],[-2,7,0],[12,7,0],[24,7.5,0],[36,8,0]].forEach(p => gems.push(makeGem(scene,...p))); pups.push(makePowerup(scene,5,8.5,0));
 
-        // Inimigos com arte de Tefé
         ens.push(makeEnemy(scene,-12,2.5,0,'voador', ARTES.vilaoTefe));
         ens.push(makeEnemy(scene,  0,5.5,0,'tanque', ARTES.vilaoTefe));
         ens.push(makeEnemy(scene, 10,6.0,0,'voador', ARTES.vilaoTefe));
@@ -662,18 +683,15 @@ scenes3d['_vitoria'] = {
   init() {
     showEndScreen('FELIZ DIA DOS NAMORADOS!','Onde quer que seja, desde que seja com você.',G.pontos,'#ff64b4');
     
-    // Tira os fundos sombrios do boss e bota uma cor de por do sol
     threeScene.background = new THREE.Color(0xffaacc);
     threeScene.fog = new THREE.FogExp2(0xff88aa, 0.015);
     
-    // ⚠️ AQUI ESTAMOS ADICIONANDO O LUCAS SAULO NO FINAL!
     const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff });
     const lucasSprite = new THREE.Sprite(lucasMat);
     lucasSprite.scale.set(1.5, 1.8, 1);
-    lucasSprite.position.set(2, 4, 0); // Fica pertinho da Sofia
+    lucasSprite.position.set(2, 4, 0);
     threeScene.add(lucasSprite);
 
-    // Coração gigante flutuando
     const heartGeo = new THREE.TorusGeometry(2, 0.2, 16, 100);
     const heartMat = new THREE.MeshStandardMaterial({color:0xff0066, emissive:0xff0033});
     const heart = new THREE.Mesh(heartGeo, heartMat);
