@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // A JORNADA DE SOFIA — 3D  (Three.js r163, ES module)
 // ═══════════════════════════════════════════════════════════════════
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three@0.163.0/build/three.module.js';
 
 // ── DOM refs ─────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
