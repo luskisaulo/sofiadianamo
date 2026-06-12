@@ -97,18 +97,20 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// ── CORREÇÃO DEFINITIVA DE VAZAMENTO DE PIXELS NA SOFIA ──
-const TEX_PAD = 0.04; // Corta 4% das bordas de cada frame para limpar sujeira
-
+// ── SOLUÇÃO MATEMÁTICA DEFINITIVA PARA O VAZAMENTO DE PIXELS (BORDER BLEEDING) ──
+// Em vez de repetir, travamos as bordas da textura para impedir linhas fantasmas nas laterais
 ARTES.sofia.generateMipmaps = false;
 ARTES.sofia.magFilter = THREE.NearestFilter;
 ARTES.sofia.minFilter = THREE.NearestFilter;
-ARTES.sofia.wrapS = THREE.RepeatWrapping;
-ARTES.sofia.wrapT = THREE.RepeatWrapping;
-ARTES.sofia.repeat.set(0.25 - TEX_PAD, 0.25 - TEX_PAD);
-ARTES.sofia.offset.set(TEX_PAD / 2, 0.75 + (TEX_PAD / 2));
+ARTES.sofia.wrapS = THREE.ClampToEdgeWrapping;
+ARTES.sofia.wrapT = THREE.ClampToEdgeWrapping;
 
-// Repetição para os chãos
+// Um pequeníssimo recuo de sub-pixel interno isola completamente o quadro atual dos vizinhos
+const PAD = 0.004; 
+ARTES.sofia.repeat.set(0.25 - (PAD * 2), 0.25 - (PAD * 2));
+ARTES.sofia.offset.set(PAD, 0.75 + PAD);
+
+// Repetição normal apenas para as texturas de cenário que precisam de loop
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -189,17 +191,6 @@ function makePowerup(scene, x,y,z) {
   const pl = new THREE.PointLight(0xffd700, 0.9, 3.5); pl.position.copy(mesh.position);
   scene.add(pl); scene.add(mesh);
   return { mesh, light:pl, baseY:y, alive:true, t:Math.random()*Math.PI*2 };
-}
-
-function makeHazardTile(scene, x,y,z, type) {
-  const g = new THREE.BoxGeometry(2,0.3,2);
-  const col  = type==='lava' ? 0xdd3300 : 0x0040cc;
-  const emis = type==='lava' ? 0xff2200 : 0x002288;
-  const m = new THREE.MeshStandardMaterial({ color:col, emissive:emis, emissiveIntensity:0.9, roughness:0.5, transparent:true, opacity:0.85 });
-  const mesh = new THREE.Mesh(g, m); mesh.position.set(x,y,z);
-  const pl = new THREE.PointLight(col, 0.7, 5); pl.position.set(x,y+1,z);
-  scene.add(pl); scene.add(mesh);
-  return { mesh, type };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -336,7 +327,6 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // ── ANIMAÇÃO E DIREÇÃO TOTALMENTE CORRIGIDAS ──
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.12) { 
@@ -349,15 +339,15 @@ function makePlayer(scene) {
         this.currentFrame = 0;
       }
       
-      // Controla a direção ESPELHANDO O MODELO em vez de inverter o UV
+      // ── INVERSÃO VIA ROTACIONAMENTO DO CONTAINER DO SPRITE (EVITA BUG DE UV COORD) ──
       if (moveX < -0.1) {
-        this.body.scale.x = -1.5;
+        this.body.scale.x = -1.5; // Espelha o próprio objeto de forma nativa e segura
       } else if (moveX > 0.1) {
         this.body.scale.x = 1.5;
       }
 
-      // Desliza a textura normalmente sem o bug de espelhamento negativo
-      this.spriteMat.map.offset.x = (this.currentFrame * 0.25) + (TEX_PAD / 2);
+      // Aplica o offset estrito com o PAD de segurança somado para manter o crop perfeito sem vazamentos
+      this.spriteMat.map.offset.x = (this.currentFrame * 0.25) + PAD;
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
@@ -429,7 +419,7 @@ function updateEnemies(dt, enemies, player) {
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
         e.dir *= -1; 
-        e.mesh.scale.x *= -1; // Vira espelhando o modelo, bem mais seguro
+        e.mesh.scale.x *= -1; 
       }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
@@ -519,13 +509,14 @@ function makeSkybox(scene, col1, col2, bgTexture) {
   scene.fog = new THREE.FogExp2(col2, 0.025);
 }
 
+// Luz do sol configurada de forma abrangente para sumir com áreas pretas de sombra artificial no mapa
 function addAmbientLights(scene, ambColor, dirColor) {
-  scene.add(new THREE.AmbientLight(ambColor||0x334466, 0.8));
-  const sun = new THREE.DirectionalLight(dirColor||0xaabbff, 1.4);
-  sun.position.set(10,20,10); sun.castShadow = true;
+  scene.add(new THREE.AmbientLight(ambColor||0x445577, 1.0));
+  const sun = new THREE.DirectionalLight(dirColor||0xbbccff, 1.5);
+  sun.position.set(15,30,15); sun.castShadow = true;
   sun.shadow.mapSize.set(2048,2048);
-  sun.shadow.camera.near=0.1; sun.shadow.camera.far=100;
-  sun.shadow.camera.left=-30; sun.shadow.camera.right=30; sun.shadow.camera.top=30;   sun.shadow.camera.bottom=-30;
+  sun.shadow.camera.near=0.1; sun.shadow.camera.far=120;
+  sun.shadow.camera.left=-40; sun.shadow.camera.right=40; sun.shadow.camera.top=40;   sun.shadow.camera.bottom=-40;
   scene.add(sun);
 }
 
