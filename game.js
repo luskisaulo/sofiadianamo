@@ -83,7 +83,7 @@ const ARTES = {
   bossGuardiao: textureLoader.load('assets/boss_guardiao.png'),
 
   // 🌆 FUNDOS DE TELA
-  fundoPelotas: textureLoader.load('assets/fundo_pelotas.jpg'),
+  fundoPelotas: textureLoader.load('assets/fundo_pelotas.png'),
   fundoRio: textureLoader.load('assets/fundo_rio.jpg'),
   fundoTefe: textureLoader.load('assets/fundo_tefe.jpg'),
   fundoBoss: textureLoader.load('assets/fundo_boss.jpg'),
