@@ -94,7 +94,7 @@ const ARTES = {
   chaoGrama: textureLoader.load('assets/chao_grama.jpg'),
   chaoPedraEscura: textureLoader.load('assets/chao_pedra.jpg'),
   
-  plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
+  plataformaPedra: textureLoader.load('assets/plataforma_base.png')
 };
 
 // Configuração para cores vivas e originais
