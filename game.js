@@ -43,7 +43,7 @@ const key  = c => !!K[c];
 const pressed = c => !!KP[c];
 
 // ── Renderer ──────────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); // Alpha habilitado para fundos mistos
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -73,7 +73,7 @@ const textureLoader = new THREE.TextureLoader();
 
 const ARTES = {
   // 🧍 PERSONAGENS
-  sofia: textureLoader.load('assets/sofia1.png'),
+  sofia: textureLoader.load('assets/sofia.png'),
   lucas: textureLoader.load('assets/lucas_saulo.png'),
   
   // 👾 VILÕES
@@ -83,7 +83,7 @@ const ARTES = {
   bossGuardiao: textureLoader.load('assets/boss_guardiao.png'),
 
   // 🌆 FUNDOS DE TELA
-  fundoPelotas: textureLoader.load('assets/fundo_pelotas.png'),
+  fundoPelotas: textureLoader.load('assets/fundo_pelotas.png'), // Alterado para buscar .png como no seu print
   fundoRio: textureLoader.load('assets/fundo_rio.jpg'),
   fundoTefe: textureLoader.load('assets/fundo_tefe.jpg'),
   fundoBoss: textureLoader.load('assets/fundo_boss.jpg'),
@@ -97,26 +97,26 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// ── CORREÇÃO DE COLORSPACE (GERA CORES VIVAS E ORIGINAIS) ──
+// Configuração para cores vivas e originais
 Object.keys(ARTES).forEach(key => {
   if (ARTES[key]) ARTES[key].colorSpace = THREE.SRGBColorSpace;
 });
 
-// ── CONFIGURAÇÃO DO SPRITESHEET DA SOFIA (8 Colunas x 3 Linhas) ──
+// Configuração do Spritesheet da Sofia (8x3)
 ARTES.sofia.generateMipmaps = false;
 ARTES.sofia.magFilter = THREE.NearestFilter;
 ARTES.sofia.minFilter = THREE.NearestFilter;
 
-// Trava as bordas para impedir completamente o vazamento de frames vizinhos de todos os lados
 ARTES.sofia.wrapS = THREE.ClampToEdgeWrapping;
 ARTES.sofia.wrapT = THREE.ClampToEdgeWrapping;
 
 const COLS = 8;
 const ROWS = 3;
-ARTES.sofia.repeat.set(1 / COLS, 1 / ROWS);
-ARTES.sofia.offset.set(0, 2 / ROWS); // Começa na linha superior (Parada)
+const PAD = 0.004; 
+ARTES.sofia.repeat.set((1 / COLS) - (PAD * 2), (1 / ROWS) - (PAD * 2));
+ARTES.sofia.offset.set(PAD, (2 / ROWS) + PAD); 
 
-// Repetição para as texturas repetíveis do cenário
+// Repetição para os chãos
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -215,8 +215,8 @@ function makePlayer(scene) {
   const spriteMat = new THREE.SpriteMaterial({ 
     map: ARTES.sofia, 
     color: 0xffffff, 
-    transparent: true,
-    alphaTest: 0.1 
+    transparent: true, 
+    alphaTest: 0.5 
   });
   const body = new THREE.Sprite(spriteMat);
   body.scale.set(1.5, 1.8, 1);
@@ -345,35 +345,32 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // ── SISTEMA DE CORTE PRECISO BASEADO NO GRID REAL 8x3 ──
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.08) { 
           this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % COLS; // Roda os 8 quadros da linha de corrida
+          this.currentFrame = (this.currentFrame + 1) % COLS; 
         }
-        this.spriteMat.map.offset.y = 1 / ROWS; // Linha 1 (do meio) -> Animação de corrida
+        this.spriteMat.map.offset.y = (1 / ROWS) + PAD; // Corrida
       } else if (!this.onGround) {
-        this.currentFrame = 2; // Quadro clássico de pulo/subida
-        this.spriteMat.map.offset.y = 0 / ROWS; // Linha 2 (de baixo) -> Pulo
+        this.currentFrame = 2; // Pulo
+        this.spriteMat.map.offset.y = (0 / ROWS) + PAD; 
       } else {
         this.frameTimer += dt;
         if (this.frameTimer > 0.15) {
           this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % 4; // Cicla os 4 primeiros quadros de parada
+          this.currentFrame = (this.currentFrame + 1) % 4; 
         }
-        this.spriteMat.map.offset.y = 2 / ROWS; // Linha 0 (de cima) -> Parada/Idle
+        this.spriteMat.map.offset.y = (2 / ROWS) + PAD; // Parada
       }
       
-      // ── DIREÇÃO SEM QUEBRAR COORDENADAS UV (ESPELHAMENTO DO OBJETO 3D) ──
       if (moveX < -0.1) {
-        this.body.scale.x = -1.5; // Olha para a esquerda espelhando o plano do Sprite nativamente
+        this.body.scale.x = -1.5; 
       } else if (moveX > 0.1) {
-        this.body.scale.x = 1.5;  // Olha para a direita normal
+        this.body.scale.x = 1.5;  
       }
 
-      // Desloca horizontalmente o corte de forma limpa e positiva, eliminando linhas fantasmas
-      this.spriteMat.map.offset.x = this.currentFrame / COLS;
+      this.spriteMat.map.offset.x = (this.currentFrame / COLS) + PAD;
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
@@ -414,7 +411,7 @@ function makeEnemy(scene, x,y,z, tipo, textureArte) {
   };
   const cfg = cfgs[tipo]||cfgs.basico;
   
-  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.2 });
+  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.5 });
   const mesh = new THREE.Sprite(m);
   mesh.scale.set(1.5, 1.5, 1);
   mesh.position.set(x,y+0.5,z);
@@ -445,7 +442,7 @@ function updateEnemies(dt, enemies, player) {
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
         e.dir *= -1; 
-        e.mesh.scale.x *= -1; // Espelha visualmente o vilão com segurança ao bater e voltar
+        e.mesh.scale.x *= -1; 
       }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
@@ -459,7 +456,7 @@ let bossRef = null;
 function makeBoss(scene, x,y,z) {
   const g = new THREE.Group();
   
-  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.2 });
+  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.5 });
   const body  = new THREE.Sprite(bodyM);
   body.scale.set(4, 4, 1);
   body.position.y = 1.5;
@@ -531,8 +528,13 @@ function clearScene(scene) {
 }
 
 function makeSkybox(scene, col1, col2, bgTexture) {
-  if (bgTexture) { scene.background = bgTexture; } else { scene.background = new THREE.Color(col1); }
-  scene.fog = new THREE.FogExp2(col2, 0.025);
+  if (bgTexture) {
+    scene.background = bgTexture;
+    scene.fog = null; // ── REMOVE A NEBLINA PARA NÃO CORTAR O FUNDO ──
+  } else {
+    scene.background = new THREE.Color(col1);
+    scene.fog = new THREE.FogExp2(col2, 0.025);
+  }
 }
 
 function addAmbientLights(scene, ambColor, dirColor) {
@@ -545,12 +547,14 @@ function addAmbientLights(scene, ambColor, dirColor) {
   scene.add(sun);
 }
 
-function addFloor(scene, y, size, textureMap) {
-  const g = new THREE.BoxGeometry(size||80, 0.4, size||40);
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness:0.8, metalness:0.2 });
-  if (textureMap) m.map = textureMap;
+function addFloor(scene, y, size) {
+  // ── TRANSFORMA O CHÃO GIGANTE EM UM APANHADOR DE SOMBRAS INVISÍVEL ──
+  const g = new THREE.PlaneGeometry(size||200, size||200);
+  const m = new THREE.ShadowMaterial({ opacity: 0.4 });
   const mesh = new THREE.Mesh(g, m);
-  mesh.position.set(0, y||0, 0); mesh.receiveShadow = true;
+  mesh.rotation.x = -Math.PI / 2; // Deita o plano horizontalmente
+  mesh.position.set(0, y||0, 0);
+  mesh.receiveShadow = true;
   scene.add(mesh);
   return mesh;
 }
@@ -569,7 +573,8 @@ function initLevel(cfg) {
 
   makeSkybox(threeScene, cfg.skyColor, cfg.fogColor, cfg.bgImage);
   addAmbientLights(threeScene, cfg.ambLight, cfg.sunLight);
-  if (cfg.hasFloor !== false) addFloor(threeScene, cfg.floorY, cfg.floorSize, cfg.floorImg);
+  
+  if (cfg.hasFloor !== false) addFloor(threeScene, cfg.floorY, cfg.floorSize);
 
   cfg.build(threeScene, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies);
 
@@ -587,8 +592,9 @@ scenes3d['fase1'] = {
   init() {
     initLevel({
       nome:'Pelotas', phaseNum:1, gems:4, skyColor:0x060814, fogColor:0x050712, ambLight:0x223366, sunLight:0x6677cc,
-      bgImage: ARTES.fundoPelotas, floorImg: ARTES.chaoAsfalto, floorY:-0.6, floorSize:120, spawnX:-18, spawnY:3, spawnZ:0, ambParticles:30, ambR:0.3, ambG:0.4, ambB:1.0,
+      bgImage: ARTES.fundoPelotas, floorY:-0.6, floorSize:120, spawnX:-18, spawnY:3, spawnZ:0, ambParticles:30, ambR:0.3, ambG:0.4, ambB:1.0,
       build(scene, plats, haz, gems, pups, ens) {
+        // A primeira plataforma (A azul gigante que sobrou da screenshot) mantida como sólida e transparente ou opaca, caso queira que Sofia não flutue
         const f = makePlatform(scene,-20,0,0, 12,0.6,8, null, null, ARTES.chaoAsfalto); plats.push(f);
         const ps = [ [-8,1.8,0,5,0.5,5], [-2,3.2,0,4,0.5,4], [4,4.8,0,4,0.5,4], [10,6.2,0,5,0.5,5], [16,7.5,0,5,0.5,5], [22,5.0,0,4,0.5,4], [28,3.5,0,5,0.5,5] ];
         ps.forEach(p => { plats.push(makePlatform(scene,...p, null, null, ARTES.plataformaPedra)); });
@@ -617,7 +623,7 @@ scenes3d['fase2'] = {
   init() {
     initLevel({
       nome:'Rio de Janeiro', phaseNum:2, gems:5, skyColor:0x060f20, fogColor:0x040c18, ambLight:0x1133aa, sunLight:0x4466ee,
-      bgImage: ARTES.fundoRio, floorImg: ARTES.chaoAreia, floorY:-0.6, floorSize:140, spawnX:-20, spawnY:3, spawnZ:0,
+      bgImage: ARTES.fundoRio, floorY:-0.6, floorSize:140, spawnX:-20, spawnY:3, spawnZ:0,
       build(scene, plats, haz, gems, pups, ens) {
         const base = makePlatform(scene,-20,0,0, 10,0.5,8, null, null, ARTES.chaoAreia); plats.push(base);
         const ps2 = [ [-12,2,0,5,0.5,5], [-6,3.5,0,4,0.5,4], [0,5,0,4,0.5,4], [6,6.5,0,4,0.5,4], [12,5,0,3,0.5,5],  [18,4,0,5,0.5,5], [24,6,0,4,0.5,4],  [30,5,0,5,0.5,5] ];
@@ -651,7 +657,7 @@ scenes3d['fase3'] = {
   init() {
     initLevel({
       nome:'Tefé — Amazônia', phaseNum:3, gems:5, skyColor:0x040c08, fogColor:0x020804, ambLight:0x113322, sunLight:0x224422,
-      bgImage: ARTES.fundoTefe, floorImg: ARTES.chaoGrama, floorY:-0.6, floorSize:160, spawnX:-22, spawnY:3, spawnZ:0, ambParticles:40, ambR:0.2, ambG:0.9, ambB:0.3,
+      bgImage: ARTES.fundoTefe, floorY:-0.6, floorSize:160, spawnX:-22, spawnY:3, spawnZ:0, ambParticles:40, ambR:0.2, ambG:0.9, ambB:0.3,
       build(scene, plats, haz, gems, pups, ens) {
         const base = makePlatform(scene,-22,0,0, 10,0.5,8, null, null, ARTES.chaoGrama); plats.push(base);
         const ps3 = [ [-14,2,0,5,0.5,5], [-8,3.5,0,4,0.5,4],  [-2,5,0,3,0.5,5], [5,6.5,0,4,0.5,4], [12,5,0,4,0.5,4],     [18,7,0,4,0.5,4], [24,5.5,0,3,0.5,5],[30,4,0,5,0.5,5],      [36,6,0,4,0.5,4] ];
@@ -680,7 +686,7 @@ scenes3d['boss'] = {
   init() {
     initLevel({
       nome:'Confronto Final', phaseNum:'', gems:0, skyColor:0x0e0310, fogColor:0x080110, ambLight:0x330022, sunLight:0xaa0044,
-      bgImage: ARTES.fundoBoss, floorImg: ARTES.chaoPedraEscura, floorY:0, floorSize:60, spawnX:-10, spawnY:3, spawnZ:0,
+      bgImage: ARTES.fundoBoss, floorY:0, floorSize:60, spawnX:-10, spawnY:3, spawnZ:0,
       build(scene, plats, haz, gems, pups, ens) {
         [[-8,2,0,6,0.5,6],[-2,4,0,4,0.5,4],[4,2,0,6,0.5,6], [-6,5,-3,3,0.5,3],[6,5,-3,3,0.5,3]].forEach(p => plats.push(makePlatform(scene,...p,null,null,ARTES.plataformaPedra)));
         const boss = makeBoss(scene, 2, 3.5, 0);
@@ -707,7 +713,7 @@ scenes3d['_vitoria'] = {
     threeScene.background = new THREE.Color(0xffaacc);
     threeScene.fog = new THREE.FogExp2(0xff88aa, 0.015);
     
-    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.1 });
+    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.5 });
     const lucasSprite = new THREE.Sprite(lucasMat);
     lucasSprite.scale.set(1.5, 1.8, 1);
     lucasSprite.position.set(2, 4, 0);
