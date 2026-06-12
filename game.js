@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // A JORNADA DE SOFIA — 3D  (Three.js r163, ES module)
-// Versão revisada: bugfixes + física de inimigos + controles touch +
-// pausa + cutscenes com diálogo + fases expandidas
+// Versão Definitiva: Estética Mario 64 + Extração de Frames via Canvas
+// (Solução absoluta contra vazamento/fantasmas de texturas)
 // ═══════════════════════════════════════════════════════════════════
 import * as THREE from 'https://unpkg.com/three@0.163.0/build/three.module.js';
 
@@ -13,7 +13,7 @@ const menuOv  = $('menu-overlay');
 const endOv   = $('end-overlay');
 
 // ── Loading bar ───────────────────────────────────────────────────
-const loadMsgs = ['Inicializando motor 3D…','Carregando texturas do Brasil…','Posicionando a Sofia…','Procurando o Lucas Saulo…','Pronto!'];
+const loadMsgs = ['Inicializando motor 3D…','Isolando frames de animação…','Posicionando a Sofia…','Procurando o Lucas Saulo…','Pronto!'];
 let lp = 0;
 const lti = setInterval(() => {
   lp = Math.min(lp + Math.random()*20 + 5, 100);
@@ -42,13 +42,7 @@ function showDialogue(speaker, text) {
   if (!box) {
     box = document.createElement('div');
     box.id = 'dialogue-box';
-    box.style.cssText = `
-      position:fixed; left:50%; bottom:8%; transform:translateX(-50%);
-      max-width:680px; width:88%; background:rgba(10,12,24,0.82);
-      border:1px solid rgba(255,255,255,0.15); border-radius:14px;
-      padding:16px 22px; color:#fff; font-family:inherit; font-size:1.05rem;
-      backdrop-filter: blur(6px); z-index:50; opacity:0; transition:opacity .4s;
-      pointer-events:none; text-align:left;`;
+    box.style.cssText = `position:fixed; left:50%; bottom:8%; transform:translateX(-50%); max-width:680px; width:88%; background:rgba(10,12,24,0.82); border:1px solid rgba(255,255,255,0.15); border-radius:14px; padding:16px 22px; color:#fff; font-family:inherit; font-size:1.05rem; backdrop-filter: blur(6px); z-index:50; opacity:0; transition:opacity .4s; pointer-events:none; text-align:left;`;
     document.body.appendChild(box);
   }
   box.innerHTML = `<div style="font-weight:700; color:#ff64b4; margin-bottom:4px; letter-spacing:.05em;">${speaker}</div><div>${text}</div>`;
@@ -62,33 +56,22 @@ function buildPauseOverlay() {
   if ($('pause-overlay')) return;
   const ov = document.createElement('div');
   ov.id = 'pause-overlay';
-  ov.style.cssText = `
-    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-    background:rgba(4,6,14,0.72); z-index:80; color:#fff; font-family:inherit;
-    flex-direction:column; gap:10px; text-align:center;`;
-  ov.innerHTML = `
-    <div style="font-size:2.2rem; font-weight:800; letter-spacing:.08em; text-shadow:0 0 18px #00f5ff;">PAUSADO</div>
-    <div style="opacity:.8; font-size:.95rem;">Pressione <b>P</b> ou <b>ESC</b> para continuar</div>
-    <div style="opacity:.6; font-size:.85rem; margin-top:8px; max-width:340px; line-height:1.5;">
-      WASD / Setas: mover · Espaço: pular<br>X: Pulso de energia · Z: Escudo · Shift: correr
-    </div>`;
+  ov.style.cssText = `position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(4,6,14,0.72); z-index:80; color:#fff; font-family:inherit; flex-direction:column; gap:10px; text-align:center;`;
+  ov.innerHTML = `<div style="font-size:2.2rem; font-weight:800; letter-spacing:.08em; text-shadow:0 0 18px #00f5ff;">PAUSADO</div><div style="opacity:.8; font-size:.95rem;">Pressione <b>P</b> ou <b>ESC</b> para continuar</div><div style="opacity:.6; font-size:.85rem; margin-top:8px; max-width:340px; line-height:1.5;">WASD / Setas: mover · Espaço: pular<br>X: Pulso de energia · Z: Escudo · Shift: correr</div>`;
   document.body.appendChild(ov);
 }
 function setPaused(v) {
   paused = v;
   const ov = $('pause-overlay'); if (ov) ov.style.display = v ? 'flex' : 'none';
-  if (v) clock.getDelta(); // evita "salto" de dt ao retomar
+  if (v) clock.getDelta();
 }
 
 // ── Input ─────────────────────────────────────────────────────────
 const K = {}, KP = {}, KR = {};
 window.addEventListener('keydown', e => {
-  if (!K[e.code]) KP[e.code] = true;
-  K[e.code] = true;
+  if (!K[e.code]) KP[e.code] = true; K[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-  if ((e.code === 'KeyP' || e.code === 'Escape') && menuState === 'playing' && !$('end-overlay')?.classList.contains('show')) {
-    setPaused(!paused);
-  }
+  if ((e.code === 'KeyP' || e.code === 'Escape') && menuState === 'playing' && !$('end-overlay')?.classList.contains('show')) setPaused(!paused);
 });
 window.addEventListener('keyup', e => { K[e.code] = false; KR[e.code] = true; });
 function clearKeys() { for (const k in KP) delete KP[k]; for (const k in KR) delete KR[k]; }
@@ -96,6 +79,7 @@ const keyDown  = c => !!K[c];
 const pressed = c => !!KP[c];
 
 // ── Touch controls (mobile) ────────────────────────────────────────
+const touchMove = { x:0, z:0 };
 function buildTouchControls() {
   if ($('touch-controls')) return;
   if (!('ontouchstart' in window)) return;
@@ -119,9 +103,9 @@ function buildTouchControls() {
   document.head.appendChild(style);
 
   const stick = $('tc-stick'), knob = $('tc-knob');
-  let stickActive = false, stickId = null, center = {x:0,y:0};
+  let stickId = null, center = {x:0,y:0};
   function setKnob(dx,dy){ const max=34; const len=Math.min(Math.hypot(dx,dy),max); const ang=Math.atan2(dy,dx); knob.style.left = (34+Math.cos(ang)*len)+'px'; knob.style.top = (34+Math.sin(ang)*len)+'px'; }
-  stick.addEventListener('touchstart', e => { const t=e.changedTouches[0]; stickActive=true; stickId=t.identifier; const r=stick.getBoundingClientRect(); center={x:r.left+r.width/2,y:r.top+r.height/2}; }, {passive:true});
+  stick.addEventListener('touchstart', e => { const t=e.changedTouches[0]; stickId=t.identifier; const r=stick.getBoundingClientRect(); center={x:r.left+r.width/2,y:r.top+r.height/2}; }, {passive:true});
   stick.addEventListener('touchmove', e => {
     for (const t of e.changedTouches) {
       if (t.identifier !== stickId) continue;
@@ -131,7 +115,7 @@ function buildTouchControls() {
       touchMove.x = nx*mag; touchMove.z = ny*mag;
     }
   }, {passive:true});
-  function stickEnd(e){ for (const t of e.changedTouches){ if(t.identifier===stickId){ stickActive=false; stickId=null; touchMove.x=0; touchMove.z=0; knob.style.left='34px'; knob.style.top='34px'; } } }
+  function stickEnd(e){ for (const t of e.changedTouches){ if(t.identifier===stickId){ stickId=null; touchMove.x=0; touchMove.z=0; knob.style.left='34px'; knob.style.top='34px'; } } }
   stick.addEventListener('touchend', stickEnd, {passive:true});
   stick.addEventListener('touchcancel', stickEnd, {passive:true});
 
@@ -143,7 +127,6 @@ function buildTouchControls() {
   bind('tc-jump','Space'); bind('tc-z','KeyZ'); bind('tc-x','KeyX');
   $('tc-pause').addEventListener('touchstart', e => { e.preventDefault(); if (menuState==='playing' && !$('end-overlay')?.classList.contains('show')) setPaused(!paused); }, {passive:false});
 }
-const touchMove = { x:0, z:0 };
 
 // ── Renderer ──────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -161,7 +144,6 @@ window.addEventListener('resize', () => { camera.aspect = window.innerWidth / wi
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.1, 800);
 camera.position.set(0, 8, 14);
 
-// ── Camera orbit state (declarado ANTES de qualquer uso — corrige TDZ) ──
 let camYaw = 0, isDragging = false, lastMX = 0;
 window.addEventListener('mousedown', e => { isDragging = true; lastMX = e.clientX; });
 window.addEventListener('mouseup',   () => { isDragging = false; });
@@ -181,83 +163,70 @@ function goTo(name) { pendingScene = name; }
 const clock = new THREE.Clock();
 
 // ═══════════════════════════════════════════════════════════════════
-// 🎨 GERENCIADOR DE ARTES E TEXTURAS (com fallback de erro)
+// 🎨 GERENCIADOR DE ARTES E SOLUÇÃO DEFINITIVA DE SPRITES (CANVAS)
 // ═══════════════════════════════════════════════════════════════════
 const textureLoader = new THREE.TextureLoader();
 
-// Carrega textura com fallback: se a imagem falhar, gera uma textura
-// procedural simples (cor sólida + grade) para o jogo nunca ficar "preto".
 function loadTex(path, fallbackColor = '#88406030') {
-  const tex = textureLoader.load(
-    path,
-    undefined,
-    undefined,
-    () => {
-      console.warn(`[A Jornada de Sofia] Não foi possível carregar "${path}" — usando textura procedural de fallback.`);
-      const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = fallbackColor; ctx.fillRect(0,0,64,64);
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
-      ctx.strokeRect(1,1,62,62);
+  const tex = textureLoader.load(path, undefined, undefined, () => {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64; const ctx = c.getContext('2d');
+      ctx.fillStyle = fallbackColor; ctx.fillRect(0,0,64,64); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2; ctx.strokeRect(1,1,62,62);
       ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(64,64); ctx.moveTo(64,0); ctx.lineTo(0,64); ctx.stroke();
       tex.image = c; tex.needsUpdate = true;
-    }
-  );
+  });
   return tex;
 }
 
 const ARTES = {
-  // 🧍 PERSONAGENS
-  sofia: loadTex('assets/sofia1.png', '#ff64b4'),
   lucas: loadTex('assets/lucas_saulo.png', '#64b4ff'),
-
-  // 👾 VILÕES
   vilaoPelotas: loadTex('assets/vilao_pelotas.png', '#7755aa'),
   vilaoRio: loadTex('assets/vilao_rio.png', '#3399cc'),
   vilaoTefe: loadTex('assets/vilao_tefe.png', '#449944'),
   bossGuardiao: loadTex('assets/boss_guardiao.png', '#aa0044'),
-
-  // 🌆 FUNDOS DE TELA
   fundoPelotas: loadTex('assets/fundo_pelotas.png', '#161830'),
   fundoRio: loadTex('assets/fundo_rio.jpg', '#102038'),
   fundoTefe: loadTex('assets/fundo_tefe.jpg', '#102014'),
   fundoBoss: loadTex('assets/fundo_boss.jpg', '#1a0414'),
-
-  // 🧱 TEXTURAS DO CHÃO
   chaoAsfalto: loadTex('assets/chao_asfalto.jpg', '#444a55'),
   chaoAreia: loadTex('assets/chao_areia.jpg', '#cdb285'),
   chaoGrama: loadTex('assets/chao_grama.jpg', '#3f7d3a'),
   chaoPedraEscura: loadTex('assets/chao_pedra.jpg', '#3a3a40'),
-
   plataformaPedra: loadTex('assets/plataforma_base.png', '#5a5f78')
 };
 
-// Configuração para cores vivas e originais
-for (const k of Object.keys(ARTES)) {
-  if (ARTES[k]) ARTES[k].colorSpace = THREE.SRGBColorSpace;
-}
+for (const k of Object.keys(ARTES)) { if (ARTES[k]) ARTES[k].colorSpace = THREE.SRGBColorSpace; }
+[ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(8, 8); });
 
-// Configuração do Spritesheet da Sofia (8x3)
-ARTES.sofia.generateMipmaps = false;
-ARTES.sofia.magFilter = THREE.NearestFilter;
-ARTES.sofia.minFilter = THREE.NearestFilter;
-ARTES.sofia.wrapS = THREE.ClampToEdgeWrapping;
-ARTES.sofia.wrapT = THREE.ClampToEdgeWrapping;
+// ── EXTRAÇÃO MATEMÁTICA DOS FRAMES (Nuke contra Ghosting) ──
+// Ao invés de usar 1 textura e mudar o offset, vamos fatiar a imagem original em 24 CanvasTextures isoladas.
+const sofiaFrames = Array(3).fill(null).map(() => Array(8).fill(null));
 
-const COLS = 8;
-const ROWS = 3;
-const PAD = 0.004;
-ARTES.sofia.repeat.set((1 / COLS) - (PAD * 2), (1 / ROWS) - (PAD * 2));
-ARTES.sofia.offset.set(PAD, (2 / ROWS) + PAD);
+const imgSofia = new Image();
+imgSofia.onload = () => {
+  const w = imgSofia.width / 8;
+  const h = imgSofia.height / 3;
+  for(let r=0; r<3; r++) {
+    for(let c=0; c<8; c++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      // Corta exato na coordenada
+      ctx.drawImage(imgSofia, c*w, r*h, w, h, 0, 0, w, h);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      sofiaFrames[r][c] = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1 });
+    }
+  }
+};
+imgSofia.src = 'assets/sofia1.png';
 
-// Repetição para os chãos
-[ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8);
-});
+// Fallback dummy material até a imagem carregar
+const dummySofiaMat = new THREE.SpriteMaterial({ color: 0xff64b4, transparent: true, opacity: 0.5 });
 
-// ── Particle system (FIX: usa anel circular de slots, evita "popping") ──
+
+// ── Particle system ───────────────────────────────────────────────
 const MAX_P = 800;
 const pGeo  = new THREE.BufferGeometry();
 const pPos  = new Float32Array(MAX_P * 3);
@@ -267,7 +236,6 @@ pGeo.setAttribute('color',    new THREE.BufferAttribute(pCol, 3));
 const pMat  = new THREE.PointsMaterial({ size:0.22, vertexColors:true, transparent:true, depthWrite:false });
 const pMesh = new THREE.Points(pGeo, pMat);
 
-// Array de slots fixos (tamanho MAX_P) — cada slot é null ou uma partícula.
 const pSlots = new Array(MAX_P).fill(null);
 let pCursor = 0;
 function burst3(x, y, z, n, r, g, b) {
@@ -276,12 +244,8 @@ function burst3(x, y, z, n, r, g, b) {
     const elev = (Math.random() - 0.5) * Math.PI;
     const spd  = 2 + Math.random() * 6;
     pSlots[pCursor] = {
-      x, y, z,
-      vx: Math.cos(elev)*Math.cos(ang)*spd,
-      vy: Math.sin(elev)*spd + 2,
-      vz: Math.cos(elev)*Math.sin(ang)*spd,
-      life: 0.5 + Math.random()*0.7, maxLife: 1.2,
-      r, g, b
+      x, y, z, vx: Math.cos(elev)*Math.cos(ang)*spd, vy: Math.sin(elev)*spd + 2, vz: Math.cos(elev)*Math.sin(ang)*spd,
+      life: 0.5 + Math.random()*0.7, maxLife: 1.2, r, g, b
     };
     pCursor = (pCursor + 1) % MAX_P;
   }
@@ -301,7 +265,7 @@ function updateParticles(dt) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// GEOMETRY HELPERS
+// GEOMETRY HELPERS (ESTÉTICA MARIO 64 - BORDAS SÓLIDAS)
 // ═══════════════════════════════════════════════════════════════════
 function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   const g = new THREE.BoxGeometry(w, h, d);
@@ -314,14 +278,29 @@ function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   mesh.receiveShadow = true; mesh.castShadow = true;
   scene.add(mesh);
 
-  const eg = new THREE.BoxGeometry(w, 0.08, d);
-  const em = new THREE.MeshStandardMaterial({ color:0x6080ff, emissive:0x3050cc, emissiveIntensity:1.2, roughness:0.2 });
-  const es = new THREE.Mesh(eg, em);
-  es.position.set(x, y+h/2+0.04, z);
-  scene.add(es);
+  // Contorno tipo Mario 64/Cartoon (Elimina z-fighting dos blocos antigos)
+  const edges = new THREE.EdgesGeometry(g);
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2, transparent: true, opacity: 0.35 }));
+  mesh.add(line);
   return mesh;
 }
 
+// Plataforma Móvel (Mecânica Mario Bros)
+function makeMovingPlatform(scene, x, y, z, w, h, d, tex, moveDir, dist, speed) {
+  const mesh = makePlatform(scene, x, y, z, w, h, d, null, null, tex);
+  return { mesh, start: new THREE.Vector3(x, y, z), moveDir, dist, speed, t: 0 };
+}
+
+function updateMovingPlatforms(dt, movers) {
+  movers.forEach(m => {
+    m.t += dt * m.speed;
+    const newPos = m.start.clone().add(m.moveDir.clone().multiplyScalar(Math.sin(m.t) * m.dist));
+    m.delta = newPos.clone().sub(m.mesh.position); // Guarda o quanto moveu para carregar o player
+    m.mesh.position.copy(newPos);
+  });
+}
+
+// Gemas Clássicas
 function makeGem(scene, x,y,z) {
   const g = new THREE.OctahedronGeometry(0.35, 0);
   const m = new THREE.MeshStandardMaterial({ color:0xff3fa4, emissive:0xff0070, emissiveIntensity:0.8, roughness:0.1, metalness:0.6 });
@@ -329,16 +308,31 @@ function makeGem(scene, x,y,z) {
   mesh.position.set(x, y, z); mesh.castShadow = true;
   const pl = new THREE.PointLight(0xff3fa4, 0.8, 3); pl.position.copy(mesh.position);
   scene.add(pl); scene.add(mesh);
-  return { mesh, light:pl, baseY:y, alive:true, t: Math.random()*Math.PI*2 };
+  return { mesh, light:pl, type:'gem', alive:true, t: Math.random()*Math.PI*2, baseY:y };
 }
 
-function makePowerup(scene, x,y,z) {
-  const g = new THREE.TorusGeometry(0.3, 0.1, 8, 16);
-  const m = new THREE.MeshStandardMaterial({ color:0xffd700, emissive:0xffaa00, emissiveIntensity:1, roughness:0.1 });
-  const mesh = new THREE.Mesh(g, m); mesh.position.set(x,y,z);
-  const pl = new THREE.PointLight(0xffd700, 0.9, 3.5); pl.position.copy(mesh.position);
-  scene.add(pl); scene.add(mesh);
-  return { mesh, light:pl, baseY:y, alive:true, t:Math.random()*Math.PI*2 };
+// Moedas giratórias estilo Mario 64
+function makeCoin(scene, x, y, z) {
+  const g = new THREE.CylinderGeometry(0.3, 0.3, 0.08, 16);
+  const m = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1, roughness: 0.2, emissive: 0xaa8800, emissiveIntensity: 0.4 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.rotation.x = Math.PI/2;
+  mesh.position.set(x, y, z);
+  scene.add(mesh);
+  return { mesh, type:'coin', alive: true, t: Math.random()*Math.PI*2, baseY: y };
+}
+
+function updateCollectibles(dt, items) {
+  items.forEach(c => {
+    if (!c.alive) return;
+    c.t += dt * 2.5;
+    c.mesh.position.y = c.baseY + Math.sin(c.t) * 0.15; // Bounce suave
+    if (c.type === 'coin') {
+      c.mesh.rotation.z += dt * 3; // Giro da moeda
+    } else {
+      c.mesh.rotation.y += dt; // Rotação da gema
+    }
+  });
 }
 
 function makeHazardTile(scene, x,y,z, type) {
@@ -352,29 +346,13 @@ function makeHazardTile(scene, x,y,z, type) {
   return { mesh, type };
 }
 
-// Pequenas plataformas decorativas / animadas (flutuam suavemente)
-function makeFloatingDeco(scene, x,y,z, scale, tex) {
-  const m = new THREE.SpriteMaterial({ map: tex, color: 0xffffff, transparent:true, opacity:0.85 });
-  const mesh = new THREE.Sprite(m);
-  mesh.scale.set(scale, scale, 1);
-  mesh.position.set(x,y,z);
-  scene.add(mesh);
-  return { mesh, baseY:y, t: Math.random()*Math.PI*2 };
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // PLAYER (SOFIA)
 // ═══════════════════════════════════════════════════════════════════
 function makePlayer(scene) {
   const group = new THREE.Group();
 
-  const spriteMat = new THREE.SpriteMaterial({
-    map: ARTES.sofia,
-    color: 0xffffff,
-    transparent: true,
-    alphaTest: 0.5
-  });
-  const body = new THREE.Sprite(spriteMat);
+  const body = new THREE.Sprite(dummySofiaMat);
   body.scale.set(1.5, 1.8, 1);
   body.position.y = 0.9;
   group.add(body);
@@ -400,10 +378,10 @@ function makePlayer(scene) {
   })();
 
   return {
-    group, body, spriteMat, shieldMesh, shieldM, glow, shadow,
+    group, body, shieldMesh, shieldM, glow, shadow,
     vel: new THREE.Vector3(), onGround: false, facingAngle: 0,
     invTimer: 0, shieldTimer:0, shieldCD:0, pulsoCD:0, blinkOn: true, blinkTimer:0,
-    frameTimer: 0, currentFrame: 0,
+    frameTimer: 0, currentFrame: 0, currentRow: 2, // Começa parada
 
     get pos() { return group.position; },
     get shielded() { return this.shieldTimer > 0; },
@@ -440,7 +418,7 @@ function makePlayer(scene) {
       G.poder -= 20; this.shieldTimer = 3.5; burst3(this.pos.x, this.pos.y, this.pos.z, 10, 0,0.8,1);
     },
 
-    update(dt, platforms, hazards, gems, powerups, enemies, boss) {
+    update(dt, platforms, movers, hazards, collectibles, enemies, boss) {
       if (this.invTimer  > 0) { this.invTimer  -= dt; if(this.invTimer  < 0) this.invTimer  = 0; }
       if (this.shieldTimer > 0) { this.shieldTimer -= dt; if (this.shieldTimer < 0) { this.shieldTimer = 0; this.shieldCD = 5; } }
       if (this.shieldCD > 0) { this.shieldCD -= dt; if(this.shieldCD < 0) this.shieldCD = 0; }
@@ -456,15 +434,14 @@ function makePlayer(scene) {
       if (keyDown('KeyW')||keyDown('ArrowUp'))    moveZ -= 1;
       if (keyDown('KeyS')||keyDown('ArrowDown'))  moveZ += 1;
 
-      // Entrada touch (analógico virtual)
       if (Math.abs(touchMove.x) > 0.05 || Math.abs(touchMove.z) > 0.05) { moveX = touchMove.x; moveZ = touchMove.z; }
 
       const camFwd = new THREE.Vector3(); camera.getWorldDirection(camFwd); camFwd.y = 0; camFwd.normalize();
       const camRight = new THREE.Vector3().crossVectors(camFwd, new THREE.Vector3(0,1,0));
       const move = camFwd.clone().multiplyScalar(-moveZ).add(camRight.clone().multiplyScalar(moveX));
+      
       if (move.length() > 0.01) {
-        move.normalize(); this.vel.x = move.x * speed * Math.min(move.length()*2,1); this.vel.z = move.z * speed * Math.min(Math.hypot(moveX,moveZ)*1,1) * (speed/speed);
-        // (mantém magnitude proporcional ao analógico para suavidade no touch)
+        move.normalize(); 
         const mag = Math.min(Math.hypot(moveX,moveZ),1);
         this.vel.x = move.x * speed * mag; this.vel.z = move.z * speed * mag;
       } else { this.vel.x *= 0.82; this.vel.z *= 0.82; }
@@ -477,62 +454,71 @@ function makePlayer(scene) {
       this.pos.x += this.vel.x * dt; this.pos.y += this.vel.y * dt; this.pos.z += this.vel.z * dt;
 
       this.onGround = false; const FEET = 0.1;
-      platforms.forEach(plat => {
+
+      // Colisão Combinada (Plataformas Fixas e Móveis)
+      const allPlats = [...platforms, ...(movers.map(m=>m.mesh))];
+      let carriedDelta = null;
+
+      allPlats.forEach(plat => {
         const pp = plat.position; const ph = plat.geometry.parameters.height; const pw = plat.geometry.parameters.width; const pd = plat.geometry.parameters.depth; const top = pp.y + ph/2;
         if (this.pos.x > pp.x - pw/2 - 0.3 && this.pos.x < pp.x + pw/2 + 0.3 && this.pos.z > pp.z - pd/2 - 0.3 && this.pos.z < pp.z + pd/2 + 0.3) {
-          if (this.pos.y - FEET < top + 0.25 && this.pos.y - FEET > top - 0.6 && this.vel.y <= 0) { this.pos.y = top + FEET; this.vel.y = 0; this.onGround = true; }
-          if (this.pos.y + FEET > pp.y - ph/2 && this.pos.y + FEET < pp.y - ph/2 + 0.5 && this.vel.y > 0) { this.vel.y = 0; }
+          if (this.pos.y - FEET < top + 0.25 && this.pos.y - FEET > top - 0.6 && this.vel.y <= 0) { 
+            this.pos.y = top + FEET; this.vel.y = 0; this.onGround = true; 
+            // Se for plataforma móvel, carrega o player junto
+            const mover = movers.find(m => m.mesh === plat);
+            if (mover && mover.delta) carriedDelta = mover.delta;
+          }
+          if (this.pos.y + FEET > pp.y - ph/2 && this.pos.y + FEET < pp.y - ph/2 + 0.5 && this.vel.y > 0) { this.vel.y = 0; } // Bump cabeça
         }
       });
 
+      if (carriedDelta) this.pos.add(carriedDelta);
+
       hazards.forEach(h => { const hp = h.mesh.position; if ( Math.abs(this.pos.x - hp.x) < 1.2 && Math.abs(this.pos.z - hp.z) < 1.2 && Math.abs(this.pos.y - hp.y) < 1.0 ) { this.takeDamage(); } });
-      gems.forEach(g => {
-        if (!g.alive) return;
-        if (this.pos.distanceTo(g.mesh.position) < 1.0) {
-          g.alive = false; g.mesh.visible = false; g.light.visible = false; G.gems++; G.poder = Math.min(G.poder+8,100);
-          burst3(g.mesh.position.x, g.mesh.position.y, g.mesh.position.z, 10, 1,0.2,0.65);
-          if (G.gems >= G.totalGems) setTimeout(()=>goTo(activeScene._next||'_gameover'), 600);
-        }
-      });
-      powerups.forEach(p => {
-        if (!p.alive) return;
-        if (this.pos.distanceTo(p.mesh.position) < 1.1) {
-          p.alive = false; p.mesh.visible = false; p.light.visible = false; G.poder = Math.min(G.poder+35,100); showCombo('PODER +35!');
-          burst3(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, 14, 1,0.85,0);
+      
+      collectibles.forEach(c => {
+        if (!c.alive) return;
+        if (this.pos.distanceTo(c.mesh.position) < 1.2) {
+          c.alive = false; c.mesh.visible = false; 
+          if(c.light) c.light.visible = false;
+          
+          if (c.type === 'gem') {
+            G.gems++; G.poder = Math.min(G.poder+8,100);
+            burst3(c.mesh.position.x, c.mesh.position.y, c.mesh.position.z, 10, 1,0.2,0.65);
+            if (G.gems >= G.totalGems) setTimeout(()=>goTo(activeScene._next||'_gameover'), 600);
+          } else if (c.type === 'coin') {
+            G.pontos += 15;
+            burst3(c.mesh.position.x, c.mesh.position.y, c.mesh.position.z, 8, 1,0.8,0);
+          }
         }
       });
 
       if (this.pos.y < -15) { this.takeDamage(); if (G.vidas > 0) { this.pos.set(activeScene._spawnX||0, 3, activeScene._spawnZ||0); this.vel.set(0,0,0); } }
 
+      // ── ATRIBUIÇÃO PERFEITA DE FRAMES ISOLADOS (CANVAS) ──
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
       if (moving && this.onGround) {
         this.frameTimer += dt;
-        if (this.frameTimer > 0.08) {
-          this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % COLS;
-        }
-        this.spriteMat.map.offset.y = (1 / ROWS) + PAD; // Corrida
+        if (this.frameTimer > 0.08) { this.frameTimer = 0; this.currentFrame = (this.currentFrame + 1) % 8; }
+        this.currentRow = 1; // Corrida (linha do meio visualmente)
       } else if (!this.onGround) {
-        this.currentFrame = 2; // Pulo
-        this.spriteMat.map.offset.y = (0 / ROWS) + PAD;
+        this.currentFrame = 0; 
+        this.currentRow = 0; // Pulo (linha de baixo visualmente na extração 2d)
       } else {
         this.frameTimer += dt;
-        if (this.frameTimer > 0.15) {
-          this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % 4;
-        }
-        this.spriteMat.map.offset.y = (2 / ROWS) + PAD; // Parada
+        if (this.frameTimer > 0.15) { this.frameTimer = 0; this.currentFrame = (this.currentFrame + 1) % 4; }
+        this.currentRow = 2; // Parada (linha do topo)
       }
 
-      if (moveX < -0.1) {
-        this.body.scale.x = -1.5;
-      } else if (moveX > 0.1) {
-        this.body.scale.x = 1.5;
+      // Atribui o material exato cortado, garantindo 0 ghosting
+      if (sofiaFrames[this.currentRow] && sofiaFrames[this.currentRow][this.currentFrame]) {
+        this.body.material = sofiaFrames[this.currentRow][this.currentFrame];
       }
 
-      this.spriteMat.map.offset.x = (this.currentFrame / COLS) + PAD;
+      if (moveX < -0.1) this.body.scale.x = -1.5;
+      else if (moveX > 0.1) this.body.scale.x = 1.5;
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
@@ -556,7 +542,7 @@ function makePlayer(scene) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// VILÕES — agora com gravidade e colisão simples com plataformas
+// VILÕES
 // ═══════════════════════════════════════════════════════════════════
 function makeEnemy(scene, x,y,z, tipo, textureArte, opts = {}) {
   const cfgs = {
@@ -587,43 +573,37 @@ function killEnemy(e) {
   burst3(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z, 16, 0.8,0.2,0.2);
 }
 
-function updateEnemies(dt, enemies, player, platforms) {
+function updateEnemies(dt, enemies, player, platforms, movers) {
+  const allPlats = [...(platforms||[]), ...((movers||[]).map(m=>m.mesh))];
+  
   enemies.forEach(e => {
     if (!e.alive) return;
     if (e.flashTimer > 0) { e.flashTimer -= dt; e.m.color.setHex(e.flashTimer > 0 ? 0xff0000 : 0xffffff); }
     e.t += dt;
 
     if (e.tipo === 'voador') {
-      // Inimigos voadores ignoram gravidade — oscilam em torno do spawn
       e.mesh.position.x = e.spawnX + Math.sin(e.t * e.vel * 0.5) * e.range;
       e.mesh.position.y = e.spawnY + 0.5 + Math.sin(e.t * 1.8) * 0.8;
     } else {
-      // Inimigos terrestres: patrulha + gravidade + colisão com plataformas
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) {
-        e.dir *= -1;
-        e.mesh.scale.x = e.mesh.scale.x < 0 ? Math.abs(e.mesh.scale.x) : -Math.abs(e.mesh.scale.x);
+        e.dir *= -1; e.mesh.scale.x = e.mesh.scale.x < 0 ? Math.abs(e.mesh.scale.x) : -Math.abs(e.mesh.scale.x);
       }
       if (!e.onGround) e.vy -= 22 * dt; else if (e.vy < 0) e.vy = 0;
       e.mesh.position.y += e.vy * dt;
 
-      e.onGround = false;
-      const FEET = 0.55;
-      if (platforms) platforms.forEach(plat => {
+      e.onGround = false; const FEET = 0.55;
+      allPlats.forEach(plat => {
         const pp = plat.position; const ph = plat.geometry.parameters.height;
-        const pw = plat.geometry.parameters.width; const pd = plat.geometry.parameters.depth;
-        const top = pp.y + ph/2;
-        if (e.mesh.position.x > pp.x - pw/2 && e.mesh.position.x < pp.x + pw/2 &&
-            e.mesh.position.z > pp.z - pd/2 && e.mesh.position.z < pp.z + pd/2) {
+        const pw = plat.geometry.parameters.width; const pd = plat.geometry.parameters.depth; const top = pp.y + ph/2;
+        if (e.mesh.position.x > pp.x - pw/2 && e.mesh.position.x < pp.x + pw/2 && e.mesh.position.z > pp.z - pd/2 && e.mesh.position.z < pp.z + pd/2) {
           if (e.mesh.position.y - FEET < top + 0.25 && e.mesh.position.y - FEET > top - 0.6 && e.vy <= 0) {
             e.mesh.position.y = top + FEET; e.vy = 0; e.onGround = true;
           }
         }
       });
-      // Evita queda infinita caso saia da plataforma
       if (e.mesh.position.y < e.spawnY - 6) { e.mesh.position.set(e.spawnX, e.spawnY + 0.5, e.spawnZ); e.vy = 0; }
     }
-
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
   });
 }
@@ -634,16 +614,13 @@ function updateEnemies(dt, enemies, player, platforms) {
 let bossRef = null;
 function makeBoss(scene, x,y,z) {
   const g = new THREE.Group();
-
   const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.5 });
   const body  = new THREE.Sprite(bodyM);
   body.scale.set(4, 4, 1);
   body.position.y = 1.5;
   g.add(body);
-
   const pl = new THREE.PointLight(0xff0040, 2, 8); pl.position.y = 1.5; g.add(pl);
   g.position.set(x,y,z); scene.add(g);
-
   bossRef = { mesh:g, bodyM, pl, hp:14, hpMax:14, alive:true, spawnX:x, spawnY:y, spawnZ:z, dir:1, fase:1, atTimer:0, t:0, flashTimer:0 };
   showBossBar('GUARDIÃO DAS SOMBRAS', 100);
   return bossRef;
@@ -672,8 +649,6 @@ function checkBoss(boss) {
   }
 }
 
-// FIX: usa boss.spawnY como referência para a oscilação vertical,
-// em vez de acumular sin() sobre a própria posição (evitava drift).
 function updateBoss(dt, boss, player, scene) {
   if (!boss || !boss.alive) return;
   boss.t += dt;
@@ -709,13 +684,8 @@ function clearScene(scene) {
 }
 
 function makeSkybox(scene, col1, col2, bgTexture) {
-  if (bgTexture) {
-    scene.background = bgTexture;
-    scene.fog = null; // remove neblina para não cortar o fundo
-  } else {
-    scene.background = new THREE.Color(col1);
-    scene.fog = new THREE.FogExp2(col2, 0.025);
-  }
+  if (bgTexture) { scene.background = bgTexture; scene.fog = null; } 
+  else { scene.background = new THREE.Color(col1); scene.fog = new THREE.FogExp2(col2, 0.025); }
 }
 
 function addAmbientLights(scene, ambColor, dirColor) {
@@ -741,13 +711,13 @@ function addFloor(scene, y, size) {
 
 const scenes3d = {};
 let playerObj = null;
-let levelPlatforms = [], levelHazards = [], levelGems = [], levelPowerups = [], levelEnemies = [], levelDecos = [];
+let levelPlatforms = [], levelMovers = [], levelHazards = [], levelItems = [], levelEnemies = [];
 let threeScene = null;
 
 function initLevel(cfg) {
   if (threeScene) clearScene(threeScene);
   threeScene = new THREE.Scene(); threeScene.add(pMesh);
-  levelPlatforms=[]; levelHazards=[]; levelGems=[]; levelPowerups=[]; levelEnemies=[]; levelDecos=[];
+  levelPlatforms=[]; levelMovers=[]; levelHazards=[]; levelItems=[]; levelEnemies=[];
   G.gems=0; G.totalGems=cfg.gems||0; G.faseNome=cfg.nome||'';
   setPhase(cfg.nome||''); setGems(0, G.totalGems); showBossBar('',0);
 
@@ -756,7 +726,7 @@ function initLevel(cfg) {
 
   if (cfg.hasFloor !== false) addFloor(threeScene, cfg.floorY, cfg.floorSize);
 
-  cfg.build(threeScene, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, levelDecos);
+  cfg.build(threeScene, levelPlatforms, levelMovers, levelHazards, levelItems, levelEnemies);
 
   playerObj = makePlayer(threeScene);
   playerObj.pos.set(cfg.spawnX||0, cfg.spawnY||3, cfg.spawnZ||0);
@@ -766,33 +736,26 @@ function initLevel(cfg) {
   showPhaseBanner(cfg.phaseNum, cfg.nome);
 }
 
-function updateDecos(dt, decos) {
-  decos.forEach(d => { d.t += dt; d.mesh.position.y = d.baseY + Math.sin(d.t*0.8)*0.4; });
-}
-
-// ── FASE 1: PELOTAS — "O Começo de Tudo" ──────────────────────────
+// ── FASE 1: PELOTAS ──────────────────────────
 scenes3d['fase1'] = {
   _next:'_cutscene1', _spawnX:-18, _spawnY:3, _spawnZ:0,
   init() {
     initLevel({
       nome:'Pelotas', phaseNum:1, gems:5, skyColor:0x060814, fogColor:0x050712, ambLight:0x223366, sunLight:0x6677cc,
       bgImage: ARTES.fundoPelotas, floorY:-0.6, floorSize:160, spawnX:-18, spawnY:3, spawnZ:0, ambParticles:30, ambR:0.3, ambG:0.4, ambB:1.0,
-      build(scene, plats, haz, gems, pups, ens, decos) {
+      build(scene, plats, movers, haz, items, ens) {
         const f = makePlatform(scene,-20,0,0, 12,0.6,8, null, null, ARTES.chaoAsfalto); plats.push(f);
-        const ps = [
-          [-8,1.8,0,5,0.5,5], [-2,3.2,0,4,0.5,4], [4,4.8,0,4,0.5,4],
-          [10,6.2,0,5,0.5,5], [16,7.5,0,5,0.5,5], [22,5.0,0,4,0.5,4],
-          [28,3.5,0,5,0.5,5], [34,5.2,0,4,0.5,4], [40,4.0,0,6,0.5,6],
-        ];
+        const ps = [ [-8,1.8,0,5,0.5,5], [-2,3.2,0,4,0.5,4], [4,4.8,0,4,0.5,4], [10,6.2,0,5,0.5,5], [16,7.5,0,5,0.5,5], [22,5.0,0,4,0.5,4], [28,3.5,0,5,0.5,5], [34,5.2,0,4,0.5,4], [40,4.0,0,6,0.5,6] ];
         ps.forEach(p => { plats.push(makePlatform(scene,...p, null, null, ARTES.plataformaPedra)); });
 
-        // Gemas espalhadas — recompensam exploração vertical
-        const gpos = [[-8,3.8,0],[4,6.8,0],[16,9.0,0],[28,5.0,0],[40,6.0,0]];
-        gpos.forEach(p => gems.push(makeGem(scene,...p)));
-        pups.push(makePowerup(scene, 10, 8.2, 0));
-        pups.push(makePowerup(scene, 34, 7.2, 0));
+        movers.push(makeMovingPlatform(scene, 48, 4.0, 0, 4, 0.5, 4, ARTES.plataformaPedra, new THREE.Vector3(1,0,0), 4, 1.5));
 
-        // Inimigos: 2 básicos de patrulha + 1 voador no alto
+        const gpos = [[-8,3.8,0],[4,6.8,0],[16,9.0,0],[28,5.0,0],[40,6.0,0]];
+        gpos.forEach(p => items.push(makeGem(scene,...p)));
+        
+        items.push(makeCoin(scene, 10, 8.2, 0));
+        items.push(makeCoin(scene, 34, 7.2, 0));
+
         ens.push(makeEnemy(scene, -4, 2.5, 0, 'basico', ARTES.vilaoPelotas));
         ens.push(makeEnemy(scene,  6, 4.0, 0, 'basico', ARTES.vilaoPelotas));
         ens.push(makeEnemy(scene, 18, 8.0, 0, 'voador', ARTES.vilaoPelotas));
@@ -802,185 +765,129 @@ scenes3d['fase1'] = {
     });
   },
   update(dt) {
-    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
-    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms);
-    updateDecos(dt, levelDecos);
+    updateMovingPlatforms(dt, levelMovers);
+    playerObj.update(dt, levelPlatforms, levelMovers, levelHazards, levelItems, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms, levelMovers);
+    updateCollectibles(dt, levelItems);
     updateParticles(dt);
   },
   draw() { renderer.render(threeScene, camera); }
 };
 
-// ── CUTSCENE 1 — Pelotas → Rio: a notícia da viagem ────────────────
+// ── CUTSCENE 1 ────────────────────────────────────────────────────
 let cs1T=0; scenes3d['_cutscene1'] = {
   _next:'fase2',
   init() {
-    cs1T=0;
-    if (threeScene) clearScene(threeScene);
-    threeScene = new THREE.Scene(); threeScene.add(pMesh);
-    threeScene.background = new THREE.Color(0x060810);
-    threeScene.add(new THREE.AmbientLight(0x223355,1));
-    for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2, 1, 1,0.4,0.7);
-    G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
+    cs1T=0; if (threeScene) clearScene(threeScene); threeScene = new THREE.Scene(); threeScene.add(pMesh); threeScene.background = new THREE.Color(0x060810); threeScene.add(new THREE.AmbientLight(0x223355,1)); for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2, 1, 1,0.4,0.7); G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
     showDialogue('Sofia', 'Pelotas foi onde tudo começou… mas o Lucas Saulo está no Rio de Janeiro agora. Hora de seguir a jornada!');
   },
   update(dt) {
-    cs1T+=dt;
-    if (cs1T > 1.8 && cs1T < 1.9) showDialogue('Voz distante', 'Cada cidade guarda uma lembrança de quem você ama…');
-    if (cs1T>3.5) { hideDialogue(); goTo('fase2'); }
-    updateParticles(dt);
-  },
-  draw() { renderer.render(threeScene,camera); }
+    cs1T+=dt; if (cs1T > 1.8 && cs1T < 1.9) showDialogue('Voz distante', 'Cada cidade guarda uma lembrança de quem você ama…'); if (cs1T>3.5) { hideDialogue(); goTo('fase2'); } updateParticles(dt);
+  }, draw() { renderer.render(threeScene,camera); }
 };
 
-// ── FASE 2: RIO DE JANEIRO — "Entre Pedras e Mar" ─────────────────
+// ── FASE 2: RIO DE JANEIRO ────────────────────────────────────────
 scenes3d['fase2'] = {
   _next:'_cutscene2', _spawnX:-20, _spawnY:3, _spawnZ:0,
   init() {
     initLevel({
       nome:'Rio de Janeiro', phaseNum:2, gems:6, skyColor:0x060f20, fogColor:0x040c18, ambLight:0x1133aa, sunLight:0x4466ee,
       bgImage: ARTES.fundoRio, floorY:-0.6, floorSize:180, spawnX:-20, spawnY:3, spawnZ:0,
-      build(scene, plats, haz, gems, pups, ens, decos) {
+      build(scene, plats, movers, haz, items, ens) {
         const base = makePlatform(scene,-20,0,0, 10,0.5,8, null, null, ARTES.chaoAreia); plats.push(base);
-        const ps2 = [
-          [-12,2,0,5,0.5,5], [-6,3.5,0,4,0.5,4], [0,5,0,4,0.5,4],
-          [6,6.5,0,4,0.5,4], [12,5,0,3,0.5,5],  [18,4,0,5,0.5,5],
-          [24,6,0,4,0.5,4],  [30,5,0,5,0.5,5], [36,7,0,4,0.5,4], [42,5.5,0,6,0.5,6],
-        ];
+        const ps2 = [ [-12,2,0,5,0.5,5], [-6,3.5,0,4,0.5,4], [0,5,0,4,0.5,4], [6,6.5,0,4,0.5,4], [12,5,0,3,0.5,5],  [18,4,0,5,0.5,5], [24,6,0,4,0.5,4],  [30,5,0,5,0.5,5], [36,7,0,4,0.5,4], [42,5.5,0,6,0.5,6] ];
         ps2.forEach(p => plats.push(makePlatform(scene,...p, null, null, ARTES.plataformaPedra)));
 
-        // Águas perigosas — travessias exigem timing
-        [[-8,0,0],[2,0,0],[14,0,0],[22,0,0],[33,0,0]].forEach(([x,y,z]) => {
-          haz.push(makeHazardTile(scene, x, y, z, 'water'));
-          haz.push(makeHazardTile(scene, x+2, y, z, 'water'));
-        });
+        movers.push(makeMovingPlatform(scene, 50, 5.5, 0, 4, 0.5, 4, ARTES.plataformaPedra, new THREE.Vector3(0,1,0), 3, 2));
 
-        [[-12,4,0],[0,7,0],[12,7,0],[24,8,0],[30,7,0],[42,7.5,0]].forEach(p => gems.push(makeGem(scene,...p)));
-        pups.push(makePowerup(scene,6,8.5,0));
-        pups.push(makePowerup(scene,18,6,0));
-        pups.push(makePowerup(scene,36,9,0));
+        [[-8,0,0],[2,0,0],[14,0,0],[22,0,0],[33,0,0]].forEach(([x,y,z]) => { haz.push(makeHazardTile(scene, x, y, z, 'water')); haz.push(makeHazardTile(scene, x+2, y, z, 'water')); });
+        [[-12,4,0],[0,7,0],[12,7,0],[24,8,0],[30,7,0],[42,7.5,0]].forEach(p => items.push(makeGem(scene,...p)));
+        items.push(makeCoin(scene,6,8.5,0)); items.push(makeCoin(scene,18,6,0)); items.push(makeCoin(scene,36,9,0));
 
-        // Inimigos variados: voadores de gaivota, tanque-pedra, básicos de praia
-        ens.push(makeEnemy(scene,-10,2.5,0,'basico', ARTES.vilaoRio));
-        ens.push(makeEnemy(scene, 2,5.5,0,'voador', ARTES.vilaoRio));
-        ens.push(makeEnemy(scene,12,6.5,0,'voador', ARTES.vilaoRio));
-        ens.push(makeEnemy(scene,22,5.0,0,'tanque', ARTES.vilaoRio, {range:3}));
-        ens.push(makeEnemy(scene,30,6.0,0,'basico', ARTES.vilaoRio));
-        ens.push(makeEnemy(scene,38,7.5,0,'voador', ARTES.vilaoRio));
+        ens.push(makeEnemy(scene,-10,2.5,0,'basico', ARTES.vilaoRio)); ens.push(makeEnemy(scene, 2,5.5,0,'voador', ARTES.vilaoRio)); ens.push(makeEnemy(scene,12,6.5,0,'voador', ARTES.vilaoRio)); ens.push(makeEnemy(scene,22,5.0,0,'tanque', ARTES.vilaoRio, {range:3})); ens.push(makeEnemy(scene,30,6.0,0,'basico', ARTES.vilaoRio)); ens.push(makeEnemy(scene,38,7.5,0,'voador', ARTES.vilaoRio));
       }
     });
   },
   update(dt) {
-    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
-    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms);
-    updateDecos(dt, levelDecos);
+    updateMovingPlatforms(dt, levelMovers);
+    playerObj.update(dt, levelPlatforms, levelMovers, levelHazards, levelItems, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms, levelMovers);
+    updateCollectibles(dt, levelItems);
     updateParticles(dt);
   },
   draw() { renderer.render(threeScene,camera); }
 };
 
-// ── CUTSCENE 2 — Rio → Tefé: rumo à Amazônia ──────────────────────
+// ── CUTSCENE 2 ────────────────────────────────────────────────────
 let cs2T=0; scenes3d['_cutscene2'] = {
   _next:'fase3',
   init() {
-    cs2T=0;
-    if (threeScene) clearScene(threeScene);
-    threeScene = new THREE.Scene(); threeScene.add(pMesh);
-    threeScene.background = new THREE.Color(0x040c06);
-    threeScene.add(new THREE.AmbientLight(0x114422,1));
-    for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2,1,0.3,1,0.5);
-    G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
+    cs2T=0; if (threeScene) clearScene(threeScene); threeScene = new THREE.Scene(); threeScene.add(pMesh); threeScene.background = new THREE.Color(0x040c06); threeScene.add(new THREE.AmbientLight(0x114422,1)); for (let i=0;i<20;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2,1,0.3,1,0.5); G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
     showDialogue('Sofia', 'O Rio ficou para trás. Agora sigo até Tefé, no coração da Amazônia — quanto mais perto, mais forte fica esse sentimento.');
   },
   update(dt) {
-    cs2T+=dt;
-    if (cs2T > 1.8 && cs2T < 1.9) showDialogue('Voz da floresta', 'A distância encurta quando o motivo é grande o suficiente…');
-    if (cs2T>3.5) { hideDialogue(); goTo('fase3'); }
-    updateParticles(dt);
-  },
-  draw() { renderer.render(threeScene,camera); }
+    cs2T+=dt; if (cs2T > 1.8 && cs2T < 1.9) showDialogue('Voz da floresta', 'A distância encurta quando o motivo é grande o suficiente…'); if (cs2T>3.5) { hideDialogue(); goTo('fase3'); } updateParticles(dt);
+  }, draw() { renderer.render(threeScene,camera); }
 };
 
-// ── FASE 3: TEFÉ — "Amazônia Profunda" ────────────────────────────
+// ── FASE 3: TEFÉ ──────────────────────────────────────────────────
 scenes3d['fase3'] = {
   _next:'_cutscene3', _spawnX:-22, _spawnY:3, _spawnZ:0,
   init() {
     initLevel({
       nome:'Tefé — Amazônia', phaseNum:3, gems:6, skyColor:0x040c08, fogColor:0x020804, ambLight:0x113322, sunLight:0x224422,
       bgImage: ARTES.fundoTefe, floorY:-0.6, floorSize:200, spawnX:-22, spawnY:3, spawnZ:0, ambParticles:40, ambR:0.2, ambG:0.9, ambB:0.3,
-      build(scene, plats, haz, gems, pups, ens, decos) {
+      build(scene, plats, movers, haz, items, ens) {
         const base = makePlatform(scene,-22,0,0, 10,0.5,8, null, null, ARTES.chaoGrama); plats.push(base);
-        const ps3 = [
-          [-14,2,0,5,0.5,5], [-8,3.5,0,4,0.5,4],  [-2,5,0,3,0.5,5],
-          [5,6.5,0,4,0.5,4], [12,5,0,4,0.5,4],     [18,7,0,4,0.5,4],
-          [24,5.5,0,3,0.5,5],[30,4,0,5,0.5,5],      [36,6,0,4,0.5,4],
-          [42,7.5,0,4,0.5,4],[48,5,0,6,0.5,6],
-        ];
+        const ps3 = [ [-14,2,0,5,0.5,5], [-8,3.5,0,4,0.5,4],  [-2,5,0,3,0.5,5], [5,6.5,0,4,0.5,4], [12,5,0,4,0.5,4],     [18,7,0,4,0.5,4], [24,5.5,0,3,0.5,5],[30,4,0,5,0.5,5],      [36,6,0,4,0.5,4], [42,7.5,0,4,0.5,4],[48,5,0,6,0.5,6] ];
         ps3.forEach(p => plats.push(makePlatform(scene,...p, null, null, ARTES.plataformaPedra)));
 
-        // Lava + água alternadas — desafio combinado
-        [[-10,0,0],[3,0,0],[16,0,0],[27,0,0],[39,0,0]].forEach(([x,y,z]) => {
-          haz.push(makeHazardTile(scene,x,y,z,'lava'));
-          haz.push(makeHazardTile(scene,x+2,y,z,'water'));
-        });
+        movers.push(makeMovingPlatform(scene, 56, 5, 0, 4, 0.5, 4, ARTES.plataformaPedra, new THREE.Vector3(1,0,0), 5, 1));
 
-        [[-14,4,0],[-2,7,0],[12,7,0],[24,7.5,0],[36,8,0],[48,7.5,0]].forEach(p => gems.push(makeGem(scene,...p)));
-        pups.push(makePowerup(scene,5,8.5,0));
-        pups.push(makePowerup(scene,42,9.5,0));
+        [[-10,0,0],[3,0,0],[16,0,0],[27,0,0],[39,0,0]].forEach(([x,y,z]) => { haz.push(makeHazardTile(scene,x,y,z,'lava')); haz.push(makeHazardTile(scene,x+2,y,z,'water')); });
+        [[-14,4,0],[-2,7,0],[12,7,0],[24,7.5,0],[36,8,0],[48,7.5,0]].forEach(p => items.push(makeGem(scene,...p)));
+        items.push(makeCoin(scene,5,8.5,0)); items.push(makeCoin(scene,42,9.5,0));
 
-        // Mais inimigos — fase mais difícil, prepara para o boss
-        ens.push(makeEnemy(scene,-12,2.5,0,'voador', ARTES.vilaoTefe));
-        ens.push(makeEnemy(scene,  0,5.5,0,'tanque', ARTES.vilaoTefe, {range:3}));
-        ens.push(makeEnemy(scene, 10,6.0,0,'voador', ARTES.vilaoTefe));
-        ens.push(makeEnemy(scene, 20,7.5,0,'voador', ARTES.vilaoTefe));
-        ens.push(makeEnemy(scene, 30,4.5,0,'tanque', ARTES.vilaoTefe, {range:3}));
-        ens.push(makeEnemy(scene, 36,6.5,0,'basico', ARTES.vilaoTefe));
-        ens.push(makeEnemy(scene, 46,5.5,0,'basico', ARTES.vilaoTefe));
+        ens.push(makeEnemy(scene,-12,2.5,0,'voador', ARTES.vilaoTefe)); ens.push(makeEnemy(scene,  0,5.5,0,'tanque', ARTES.vilaoTefe, {range:3})); ens.push(makeEnemy(scene, 10,6.0,0,'voador', ARTES.vilaoTefe)); ens.push(makeEnemy(scene, 20,7.5,0,'voador', ARTES.vilaoTefe)); ens.push(makeEnemy(scene, 30,4.5,0,'tanque', ARTES.vilaoTefe, {range:3})); ens.push(makeEnemy(scene, 36,6.5,0,'basico', ARTES.vilaoTefe)); ens.push(makeEnemy(scene, 46,5.5,0,'basico', ARTES.vilaoTefe));
       }
     });
   },
   update(dt) {
-    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, null);
-    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms);
-    updateDecos(dt, levelDecos);
+    updateMovingPlatforms(dt, levelMovers);
+    playerObj.update(dt, levelPlatforms, levelMovers, levelHazards, levelItems, levelEnemies, null);
+    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms, levelMovers);
+    updateCollectibles(dt, levelItems);
     updateParticles(dt);
   },
   draw() { renderer.render(threeScene,camera); }
 };
 
-// ── CUTSCENE 3 — Tefé → Confronto Final ───────────────────────────
+// ── CUTSCENE 3 ────────────────────────────────────────────────────
 let cs3T=0; scenes3d['_cutscene3'] = {
   _next:'boss',
   init() {
-    cs3T=0;
-    if (threeScene) clearScene(threeScene);
-    threeScene = new THREE.Scene(); threeScene.add(pMesh);
-    threeScene.background = new THREE.Color(0x0e0310);
-    threeScene.add(new THREE.AmbientLight(0x330022,1));
-    for (let i=0;i<24;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2,1,1,0.2,0.4);
-    G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
+    cs3T=0; if (threeScene) clearScene(threeScene); threeScene = new THREE.Scene(); threeScene.add(pMesh); threeScene.background = new THREE.Color(0x0e0310); threeScene.add(new THREE.AmbientLight(0x330022,1)); for (let i=0;i<24;i++) burst3(Math.random()*10-5,Math.random()*4,Math.random()*4-2,1,1,0.2,0.4); G.gems=0; G.totalGems=0; setPhase(''); setGems(0,0); showBossBar('',0);
     showDialogue('Sofia', 'Algo bloqueia o caminho até o Lucas Saulo… o Guardião das Sombras não vai me impedir de chegar até ele!');
   },
   update(dt) {
-    cs3T+=dt;
-    if (cs3T > 1.8 && cs3T < 1.9) showDialogue('Guardião das Sombras', 'Ninguém atravessa a distância sem provar sua força…');
-    if (cs3T>3.5) { hideDialogue(); goTo('boss'); }
-    updateParticles(dt);
-  },
-  draw() { renderer.render(threeScene,camera); }
+    cs3T+=dt; if (cs3T > 1.8 && cs3T < 1.9) showDialogue('Guardião das Sombras', 'Ninguém atravessa a distância sem provar sua força…'); if (cs3T>3.5) { hideDialogue(); goTo('boss'); } updateParticles(dt);
+  }, draw() { renderer.render(threeScene,camera); }
 };
 
-// ── BOSS FASE — "Confronto Final" ──────────────────────────────────
+// ── BOSS FASE ─────────────────────────────────────────────────────
 scenes3d['boss'] = {
   _next:'_vitoria', _spawnX:-10, _spawnY:3, _spawnZ:0,
   init() {
     initLevel({
       nome:'Confronto Final', phaseNum:'', gems:0, skyColor:0x0e0310, fogColor:0x080110, ambLight:0x330022, sunLight:0xaa0044,
       bgImage: ARTES.fundoBoss, floorY:0, floorSize:60, spawnX:-10, spawnY:3, spawnZ:0,
-      build(scene, plats, haz, gems, pups, ens, decos) {
-        [[-8,2,0,6,0.5,6],[-2,4,0,4,0.5,4],[4,2,0,6,0.5,6], [-6,5,-3,3,0.5,3],[6,5,-3,3,0.5,3]]
-          .forEach(p => plats.push(makePlatform(scene,...p,null,null,ARTES.plataformaPedra)));
+      build(scene, plats, movers, haz, items, ens) {
+        [[-8,2,0,6,0.5,6],[-2,4,0,4,0.5,4],[4,2,0,6,0.5,6]].forEach(p => plats.push(makePlatform(scene,...p,null,null,ARTES.plataformaPedra)));
+        
+        movers.push(makeMovingPlatform(scene, -6, 5, -3, 3, 0.5, 3, ARTES.plataformaPedra, new THREE.Vector3(1,0,0), 2, 2));
+        movers.push(makeMovingPlatform(scene, 6, 5, -3, 3, 0.5, 3, ARTES.plataformaPedra, new THREE.Vector3(-1,0,0), 2, 2));
+
         const boss = makeBoss(scene, 2, 3.5, 0);
-        // Reforços surgem após 5s — referencia o array correto (levelEnemies via `ens`)
         setTimeout(()=>{
           if (bossRef && bossRef.alive) {
             ens.push(makeEnemy(scene,-8,3.0,0,'voador', ARTES.bossGuardiao));
@@ -993,16 +900,17 @@ scenes3d['boss'] = {
     showPhaseBanner('','CONFRONTO FINAL');
   },
   update(dt) {
-    playerObj.update(dt, levelPlatforms, levelHazards, levelGems, levelPowerups, levelEnemies, bossRef);
-    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms);
+    updateMovingPlatforms(dt, levelMovers);
+    playerObj.update(dt, levelPlatforms, levelMovers, levelHazards, levelItems, levelEnemies, bossRef);
+    updateEnemies(dt, levelEnemies, playerObj, levelPlatforms, levelMovers);
     updateBoss(dt, bossRef, playerObj, threeScene);
-    updateDecos(dt, levelDecos);
+    updateCollectibles(dt, levelItems);
     updateParticles(dt);
   },
   draw() { renderer.render(threeScene,camera); }
 };
 
-// ── GAME OVER & VITÓRIA (pseudo-scenes) ──────────────────────────
+// ── GAME OVER & VITÓRIA ──────────────────────────────────────────
 scenes3d['_gameover'] = {
   init() { hideDialogue(); showEndScreen('FIM DA JORNADA','A distância não venceu desta vez. Tente outra vez!',G.pontos,'#ff3c3c'); },
   update() { if (pressed('Space')||pressed('Enter')) { hideEndScreen(); G.reset(); goTo('fase1'); } },
@@ -1017,7 +925,7 @@ scenes3d['_vitoria'] = {
     threeScene.background = new THREE.Color(0xffaacc);
     threeScene.fog = new THREE.FogExp2(0xff88aa, 0.015);
 
-    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.5 });
+    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.1 });
     const lucasSprite = new THREE.Sprite(lucasMat);
     lucasSprite.scale.set(1.5, 1.8, 1);
     lucasSprite.position.set(2, 4, 0);
