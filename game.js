@@ -97,21 +97,16 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// ── CORREÇÃO DE VAZAMENTO DE PIXELS NA SOFIA (CROP) ──
+// ── CORREÇÃO DEFINITIVA DE VAZAMENTO DE PIXELS NA SOFIA ──
+const TEX_PAD = 0.04; // Corta 4% das bordas de cada frame para limpar sujeira
+
 ARTES.sofia.generateMipmaps = false;
 ARTES.sofia.magFilter = THREE.NearestFilter;
 ARTES.sofia.minFilter = THREE.NearestFilter;
-
-// Variáveis para cortar exatamente o excesso e eliminar a beirada "fantasma"
-const CROP_X = 0.04; // Corta 4% horizontalmente para limpar as bordas
-const CROP_Y = 0.01; // Corta 1% verticalmente
-const FRAME_W = 0.25; // Cada frame ocupa exatamente 25% (1/4) da largura
-
-// Configuração inicial do Spritesheet
-ARTES.sofia.wrapS = THREE.ClampToEdgeWrapping;
-ARTES.sofia.wrapT = THREE.ClampToEdgeWrapping;
-ARTES.sofia.repeat.set(FRAME_W - CROP_X, 0.25 - CROP_Y);
-ARTES.sofia.offset.set(CROP_X / 2, 0.75 + (CROP_Y / 2));
+ARTES.sofia.wrapS = THREE.RepeatWrapping;
+ARTES.sofia.wrapT = THREE.RepeatWrapping;
+ARTES.sofia.repeat.set(0.25 - TEX_PAD, 0.25 - TEX_PAD);
+ARTES.sofia.offset.set(TEX_PAD / 2, 0.75 + (TEX_PAD / 2));
 
 // Repetição para os chãos
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
@@ -341,7 +336,7 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // ── SISTEMA DE CORTE LIMPO PARA ANIMAÇÃO (SEM BORDAS EXTRAS) ──
+      // ── ANIMAÇÃO E DIREÇÃO TOTALMENTE CORRIGIDAS ──
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.12) { 
@@ -354,19 +349,15 @@ function makePlayer(scene) {
         this.currentFrame = 0;
       }
       
-      // Controla inversão do Sprite e atualiza o Crop
+      // Controla a direção ESPELHANDO O MODELO em vez de inverter o UV
       if (moveX < -0.1) {
-        this.spriteMat.map.repeat.x = -(FRAME_W - CROP_X);
+        this.body.scale.x = -1.5;
       } else if (moveX > 0.1) {
-        this.spriteMat.map.repeat.x = (FRAME_W - CROP_X);
+        this.body.scale.x = 1.5;
       }
 
-      // Aplica Offset perfeito baseado na direção
-      if (this.spriteMat.map.repeat.x < 0) {
-        this.spriteMat.map.offset.x = ((this.currentFrame + 1) * FRAME_W) - (CROP_X / 2);
-      } else {
-        this.spriteMat.map.offset.x = (this.currentFrame * FRAME_W) + (CROP_X / 2);
-      }
+      // Desliza a textura normalmente sem o bug de espelhamento negativo
+      this.spriteMat.map.offset.x = (this.currentFrame * 0.25) + (TEX_PAD / 2);
 
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
@@ -438,7 +429,7 @@ function updateEnemies(dt, enemies, player) {
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
         e.dir *= -1; 
-        if(e.m.map) e.m.map.repeat.x *= -1; 
+        e.mesh.scale.x *= -1; // Vira espelhando o modelo, bem mais seguro
       }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
