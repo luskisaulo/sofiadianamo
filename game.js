@@ -73,7 +73,7 @@ const textureLoader = new THREE.TextureLoader();
 
 const ARTES = {
   // 🧍 PERSONAGENS
-  sofia: textureLoader.load('assets/sofia.png'),
+  sofia: textureLoader.load('assets/sofia1.png'),
   lucas: textureLoader.load('assets/lucas_saulo.png'),
   
   // 👾 VILÕES
