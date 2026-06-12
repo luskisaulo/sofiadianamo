@@ -49,7 +49,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
 renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
@@ -73,7 +73,7 @@ const textureLoader = new THREE.TextureLoader();
 
 const ARTES = {
   // 🧍 PERSONAGENS
-  sofia: textureLoader.load('assets/sofia1.png'),
+  sofia: textureLoader.load('assets/sofia.png'),
   lucas: textureLoader.load('assets/lucas_saulo.png'),
   
   // 👾 VILÕES
@@ -97,18 +97,26 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// ── DEFINIÇÃO EXATA DO SPRITESHEET (8 Colunas x 3 Linhas) ──
+// ── CORREÇÃO DE COLORSPACE (GERA CORES VIVAS E ORIGINAIS) ──
+Object.keys(ARTES).forEach(key => {
+  if (ARTES[key]) ARTES[key].colorSpace = THREE.SRGBColorSpace;
+});
+
+// ── CONFIGURAÇÃO DO SPRITESHEET DA SOFIA (8 Colunas x 3 Linhas) ──
 ARTES.sofia.generateMipmaps = false;
 ARTES.sofia.magFilter = THREE.NearestFilter;
 ARTES.sofia.minFilter = THREE.NearestFilter;
 
-ARTES.sofia.wrapS = THREE.RepeatWrapping;
-ARTES.sofia.wrapT = THREE.RepeatWrapping;
-// O arquivo tem 8 colunas e 3 linhas
-ARTES.sofia.repeat.set(1/8, 1/3);
-ARTES.sofia.offset.set(0, 2/3); // Linha de cima
+// Trava as bordas para impedir completamente o vazamento de frames vizinhos de todos os lados
+ARTES.sofia.wrapS = THREE.ClampToEdgeWrapping;
+ARTES.sofia.wrapT = THREE.ClampToEdgeWrapping;
 
-// Repetição para os chãos
+const COLS = 8;
+const ROWS = 3;
+ARTES.sofia.repeat.set(1 / COLS, 1 / ROWS);
+ARTES.sofia.offset.set(0, 2 / ROWS); // Começa na linha superior (Parada)
+
+// Repetição para as texturas repetíveis do cenário
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -204,12 +212,11 @@ function makeHazardTile(scene, x,y,z, type) {
 function makePlayer(scene) {
   const group = new THREE.Group();
 
-  // alphaTest: 0.5 é o que remove a "fantasma" e resolve a transparência apagada
   const spriteMat = new THREE.SpriteMaterial({ 
     map: ARTES.sofia, 
     color: 0xffffff, 
-    transparent: true, 
-    alphaTest: 0.5 
+    transparent: true,
+    alphaTest: 0.1 
   });
   const body = new THREE.Sprite(spriteMat);
   body.scale.set(1.5, 1.8, 1);
@@ -338,40 +345,36 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // ── MATEMÁTICA DEFINITIVA DE UV MAPPING PARA GRID 8 COLUNAS x 3 LINHAS ──
-      const COLS = 8;
-      const ROWS = 3;
-
+      // ── SISTEMA DE CORTE PRECISO BASEADO NO GRID REAL 8x3 ──
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.08) { 
           this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % COLS; 
+          this.currentFrame = (this.currentFrame + 1) % COLS; // Roda os 8 quadros da linha de corrida
         }
-        this.spriteMat.map.offset.y = 1 / ROWS; // Linha do meio (Correndo)
+        this.spriteMat.map.offset.y = 1 / ROWS; // Linha 1 (do meio) -> Animação de corrida
       } else if (!this.onGround) {
-        this.currentFrame = 1; // Pulo
-        this.spriteMat.map.offset.y = 0; // Linha de baixo (Pulo/Ataque)
+        this.currentFrame = 2; // Quadro clássico de pulo/subida
+        this.spriteMat.map.offset.y = 0 / ROWS; // Linha 2 (de baixo) -> Pulo
       } else {
-        this.currentFrame = 0; // Parada
-        this.spriteMat.map.offset.y = 2 / ROWS; // Linha de cima (Parada)
+        this.frameTimer += dt;
+        if (this.frameTimer > 0.15) {
+          this.frameTimer = 0;
+          this.currentFrame = (this.currentFrame + 1) % 4; // Cicla os 4 primeiros quadros de parada
+        }
+        this.spriteMat.map.offset.y = 2 / ROWS; // Linha 0 (de cima) -> Parada/Idle
       }
       
-      // Controla a direção através da Textura UV (Inversão Limpa)
+      // ── DIREÇÃO SEM QUEBRAR COORDENADAS UV (ESPELHAMENTO DO OBJETO 3D) ──
       if (moveX < -0.1) {
-        this.spriteMat.map.repeat.x = -1 / COLS;
+        this.body.scale.x = -1.5; // Olha para a esquerda espelhando o plano do Sprite nativamente
       } else if (moveX > 0.1) {
-        this.spriteMat.map.repeat.x = 1 / COLS;
+        this.body.scale.x = 1.5;  // Olha para a direita normal
       }
 
-      // Aplica o deslocamento horizontal
-      if (this.spriteMat.map.repeat.x < 0) {
-        this.spriteMat.map.offset.x = (this.currentFrame + 1) / COLS;
-      } else {
-        this.spriteMat.map.offset.x = this.currentFrame / COLS;
-      }
+      // Desloca horizontalmente o corte de forma limpa e positiva, eliminando linhas fantasmas
+      this.spriteMat.map.offset.x = this.currentFrame / COLS;
 
-      // Efeitos Visuais (Escudo)
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
       this.shieldMesh.visible = this.shieldM.opacity > 0.01;
@@ -383,7 +386,6 @@ function makePlayer(scene) {
       setHearts(G.vidas); setPower(G.poder); setGems(G.gems, G.totalGems); setScore(G.pontos);
       setSkill('x', G.poder >= 30 && this.pulsoCD <= 0); setSkill('z', G.poder >= 20 && this.shieldCD <= 0 && !this.shielded);
 
-      // Câmera
       const idealOffset = new THREE.Vector3(0, 6, 11);
       idealOffset.applyAxisAngle(new THREE.Vector3(0,1,0), camYaw);
       const idealPos = this.pos.clone().add(idealOffset);
@@ -412,7 +414,7 @@ function makeEnemy(scene, x,y,z, tipo, textureArte) {
   };
   const cfg = cfgs[tipo]||cfgs.basico;
   
-  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.5 });
+  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.2 });
   const mesh = new THREE.Sprite(m);
   mesh.scale.set(1.5, 1.5, 1);
   mesh.position.set(x,y+0.5,z);
@@ -443,11 +445,7 @@ function updateEnemies(dt, enemies, player) {
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
         e.dir *= -1; 
-        if(e.m.map) {
-          // Espelha vilão se tiver textura configurada
-          if(e.m.map.repeat.x > 0) e.m.map.repeat.x *= -1;
-          else e.m.map.repeat.x = Math.abs(e.m.map.repeat.x);
-        }
+        e.mesh.scale.x *= -1; // Espelha visualmente o vilão com segurança ao bater e voltar
       }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
@@ -461,7 +459,7 @@ let bossRef = null;
 function makeBoss(scene, x,y,z) {
   const g = new THREE.Group();
   
-  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.5 });
+  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.2 });
   const body  = new THREE.Sprite(bodyM);
   body.scale.set(4, 4, 1);
   body.position.y = 1.5;
@@ -709,7 +707,7 @@ scenes3d['_vitoria'] = {
     threeScene.background = new THREE.Color(0xffaacc);
     threeScene.fog = new THREE.FogExp2(0xff88aa, 0.015);
     
-    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.5 });
+    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.1 });
     const lucasSprite = new THREE.Sprite(lucasMat);
     lucasSprite.scale.set(1.5, 1.8, 1);
     lucasSprite.position.set(2, 4, 0);
