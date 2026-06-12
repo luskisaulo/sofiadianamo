@@ -73,7 +73,7 @@ const textureLoader = new THREE.TextureLoader();
 
 const ARTES = {
   // 🧍 PERSONAGENS
-  sofia: textureLoader.load('assets/sofia1.png'),
+  sofia: textureLoader.load('assets/sofia.png'),
   lucas: textureLoader.load('assets/lucas_saulo.png'),
   
   // 👾 VILÕES
@@ -97,10 +97,16 @@ const ARTES = {
   plataformaPedra: textureLoader.load('assets/plataforma_base.jpg')
 };
 
-// ── CORREÇÃO DE FILTROS PARA ARTES 2D ──
+// ── DEFINIÇÃO EXATA DO SPRITESHEET (8 Colunas x 3 Linhas) ──
 ARTES.sofia.generateMipmaps = false;
 ARTES.sofia.magFilter = THREE.NearestFilter;
 ARTES.sofia.minFilter = THREE.NearestFilter;
+
+ARTES.sofia.wrapS = THREE.RepeatWrapping;
+ARTES.sofia.wrapT = THREE.RepeatWrapping;
+// O arquivo tem 8 colunas e 3 linhas
+ARTES.sofia.repeat.set(1/8, 1/3);
+ARTES.sofia.offset.set(0, 2/3); // Linha de cima
 
 // Repetição para os chãos
 [ARTES.chaoAsfalto, ARTES.chaoAreia, ARTES.chaoGrama, ARTES.chaoPedraEscura, ARTES.plataformaPedra].forEach(tex => {
@@ -198,7 +204,13 @@ function makeHazardTile(scene, x,y,z, type) {
 function makePlayer(scene) {
   const group = new THREE.Group();
 
-  const spriteMat = new THREE.SpriteMaterial({ map: ARTES.sofia, color: 0xffffff, transparent: true });
+  // alphaTest: 0.5 é o que remove a "fantasma" e resolve a transparência apagada
+  const spriteMat = new THREE.SpriteMaterial({ 
+    map: ARTES.sofia, 
+    color: 0xffffff, 
+    transparent: true, 
+    alphaTest: 0.5 
+  });
   const body = new THREE.Sprite(spriteMat);
   body.scale.set(1.5, 1.8, 1);
   body.position.y = 0.9;
@@ -228,7 +240,7 @@ function makePlayer(scene) {
     group, body, spriteMat, shieldMesh, shieldM, glow, shadow,
     vel: new THREE.Vector3(), onGround: false, facingAngle: 0,
     invTimer: 0, shieldTimer:0, shieldCD:0, pulsoCD:0, blinkOn: true, blinkTimer:0,
-    frameTimer: 0, currentFrame: 0, lastFlipped: false,
+    frameTimer: 0, currentFrame: 0,
 
     get pos() { return group.position; },
     get shielded() { return this.shieldTimer > 0; },
@@ -326,53 +338,44 @@ function makePlayer(scene) {
       const moving = Math.abs(this.vel.x) > 0.3 || Math.abs(this.vel.z) > 0.3;
       this.body.position.y = moving ? 0.9 + Math.sin(Date.now()*0.015)*0.1 : 0.9;
 
-      // ── MATEMÁTICA DEFINITIVA DE UV MAPPING PARA SPRITESHEETS ──
+      // ── MATEMÁTICA DEFINITIVA DE UV MAPPING PARA GRID 8 COLUNAS x 3 LINHAS ──
+      const COLS = 8;
+      const ROWS = 3;
+
       if (moving && this.onGround) {
         this.frameTimer += dt;
-        if (this.frameTimer > 0.12) { 
+        if (this.frameTimer > 0.08) { 
           this.frameTimer = 0;
-          this.currentFrame = (this.currentFrame + 1) % 4; 
+          this.currentFrame = (this.currentFrame + 1) % COLS; 
         }
+        this.spriteMat.map.offset.y = 1 / ROWS; // Linha do meio (Correndo)
       } else if (!this.onGround) {
-        this.currentFrame = 3; // Pulo
+        this.currentFrame = 1; // Pulo
+        this.spriteMat.map.offset.y = 0; // Linha de baixo (Pulo/Ataque)
       } else {
         this.currentFrame = 0; // Parada
+        this.spriteMat.map.offset.y = 2 / ROWS; // Linha de cima (Parada)
       }
       
-      // Controla a direção em que ela está olhando de forma permanente
-      if (moveX < -0.1) this.lastFlipped = true;
-      if (moveX > 0.1) this.lastFlipped = false;
-
-      // Tamanho exato de 1 frame (1 dividido por 4)
-      const FRAME_W = 0.25; 
-      const FRAME_H = 0.25;
-      
-      // Corta 4% de cada lado do frame para blindar contra pixels vizinhos
-      const CROP_X = 0.04; 
-      const CROP_Y = 0.02;
-
-      const rw = FRAME_W - CROP_X;
-      const rh = FRAME_H - CROP_Y;
-
-      // Se estiver virada pra esquerda, inverte o sinal do repeat.x
-      this.spriteMat.map.repeat.set(this.lastFlipped ? -rw : rw, rh);
-
-      // Calcula o deslocamento (Offset) base
-      let ox = (this.currentFrame * FRAME_W) + (CROP_X / 2);
-      let oy = (3 * FRAME_H) + (CROP_Y / 2); // Linha superior (row 3)
-
-      // Em WebGL, quando o repeat é negativo, a coordenada Offset ancora no lado OPOSTO.
-      // Então precisamos somar a largura da imagem para alinhar de volta no lugar certo.
-      if (this.lastFlipped) {
-        ox += rw; 
+      // Controla a direção através da Textura UV (Inversão Limpa)
+      if (moveX < -0.1) {
+        this.spriteMat.map.repeat.x = -1 / COLS;
+      } else if (moveX > 0.1) {
+        this.spriteMat.map.repeat.x = 1 / COLS;
       }
 
-      this.spriteMat.map.offset.set(ox, oy);
+      // Aplica o deslocamento horizontal
+      if (this.spriteMat.map.repeat.x < 0) {
+        this.spriteMat.map.offset.x = (this.currentFrame + 1) / COLS;
+      } else {
+        this.spriteMat.map.offset.x = this.currentFrame / COLS;
+      }
 
-      // Escudo e Efeitos
+      // Efeitos Visuais (Escudo)
       this.shieldM.opacity = this.shielded ? 0.55 + 0.15*Math.sin(Date.now()*0.008) : Math.max(0, this.shieldM.opacity - dt*3);
       this.shieldMesh.rotation.z += dt*2; this.shieldMesh.rotation.y += dt*1.3;
       this.shieldMesh.visible = this.shieldM.opacity > 0.01;
+      
       if (this.shielded) { this.glow.color.set(0x00f5ff); } else { this.glow.color.set(0xff3fa4); }
 
       this.shadow.position.set(this.pos.x, this.pos.y - FEET + 0.02, this.pos.z);
@@ -409,7 +412,7 @@ function makeEnemy(scene, x,y,z, tipo, textureArte) {
   };
   const cfg = cfgs[tipo]||cfgs.basico;
   
-  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true });
+  const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.5 });
   const mesh = new THREE.Sprite(m);
   mesh.scale.set(1.5, 1.5, 1);
   mesh.position.set(x,y+0.5,z);
@@ -440,7 +443,11 @@ function updateEnemies(dt, enemies, player) {
       e.mesh.position.x += e.dir * e.vel * dt;
       if (Math.abs(e.mesh.position.x - e.spawnX) > e.range) { 
         e.dir *= -1; 
-        if(e.m.map) e.m.map.repeat.x *= -1; 
+        if(e.m.map) {
+          // Espelha vilão se tiver textura configurada
+          if(e.m.map.repeat.x > 0) e.m.map.repeat.x *= -1;
+          else e.m.map.repeat.x = Math.abs(e.m.map.repeat.x);
+        }
       }
     }
     if (player.pos.distanceTo(e.mesh.position) < 1.1) player.takeDamage();
@@ -454,7 +461,7 @@ let bossRef = null;
 function makeBoss(scene, x,y,z) {
   const g = new THREE.Group();
   
-  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true });
+  const bodyM = new THREE.SpriteMaterial({ map: ARTES.bossGuardiao, color: 0xffffff, transparent:true, alphaTest: 0.5 });
   const body  = new THREE.Sprite(bodyM);
   body.scale.set(4, 4, 1);
   body.position.y = 1.5;
@@ -702,7 +709,7 @@ scenes3d['_vitoria'] = {
     threeScene.background = new THREE.Color(0xffaacc);
     threeScene.fog = new THREE.FogExp2(0xff88aa, 0.015);
     
-    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff });
+    const lucasMat = new THREE.SpriteMaterial({ map: ARTES.lucas, color: 0xffffff, transparent:true, alphaTest: 0.5 });
     const lucasSprite = new THREE.Sprite(lucasMat);
     lucasSprite.scale.set(1.5, 1.8, 1);
     lucasSprite.position.set(2, 4, 0);
