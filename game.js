@@ -49,16 +49,87 @@ function showDialogue(speaker, text) {
 }
 function hideDialogue() { const b = $('dialogue-box'); if (b) b.style.opacity = '0'; }
 
+// ── Pause overlay ────────────────────────────────────────────────
+let paused = false;
+function buildPauseOverlay() {
+  if ($('pause-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'pause-overlay';
+  ov.style.cssText = `position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(4,6,14,0.72); z-index:80; color:#fff; font-family:inherit; flex-direction:column; gap:10px; text-align:center;`;
+  ov.innerHTML = `<div style="font-size:2.2rem; font-weight:800; letter-spacing:.08em; text-shadow:0 0 18px #00f5ff;">PAUSADO</div><div style="opacity:.8; font-size:.95rem;">Pressione <b>P</b> ou <b>ESC</b> para continuar</div><div style="opacity:.6; font-size:.85rem; margin-top:8px; max-width:340px; line-height:1.5;">WASD / Setas: mover · Espaço: pular<br>X: Pulso de energia · Z: Escudo · Shift: correr</div>`;
+  document.body.appendChild(ov);
+}
+function setPaused(v) {
+  paused = v;
+  const ov = $('pause-overlay'); if (ov) ov.style.display = v ? 'flex' : 'none';
+  if (v) clock.getDelta(); // Evita pulo no tempo ao despausar
+}
+
 // ── Input ─────────────────────────────────────────────────────────
 const K = {}, KP = {}, KR = {};
 window.addEventListener('keydown', e => {
   if (!K[e.code]) KP[e.code] = true; K[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if ((e.code === 'KeyP' || e.code === 'Escape') && menuState === 'playing' && !$('end-overlay')?.classList.contains('show')) {
+      setPaused(!paused);
+  }
 });
 window.addEventListener('keyup', e => { K[e.code] = false; KR[e.code] = true; });
 function clearKeys() { for (const k in KP) delete KP[k]; for (const k in KR) delete KR[k]; }
 const keyDown  = c => !!K[c];
 const pressed = c => !!KP[c];
+
+// ── Touch controls (mobile) ────────────────────────────────────────
+const touchMove = { x:0, z:0 };
+function buildTouchControls() {
+  if ($('touch-controls')) return;
+  if (!('ontouchstart' in window)) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'touch-controls';
+  wrap.style.cssText = `position:fixed; inset:0; z-index:40; pointer-events:none; font-family:inherit;`;
+  wrap.innerHTML = `
+    <div id="tc-stick" style="position:absolute; left:24px; bottom:28px; width:128px; height:128px; border-radius:50%; background:rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.25); pointer-events:auto; touch-action:none;">
+      <div id="tc-knob" style="position:absolute; left:34px; top:34px; width:60px; height:60px; border-radius:50%; background:rgba(0,245,255,0.35); border:1px solid rgba(0,245,255,0.6);"></div>
+    </div>
+    <div style="position:absolute; right:20px; bottom:24px; display:flex; gap:14px; align-items:flex-end; pointer-events:auto;">
+      <button id="tc-z" class="tc-btn" style="width:62px;height:62px;">Z</button>
+      <button id="tc-x" class="tc-btn" style="width:62px;height:62px;">X</button>
+      <button id="tc-jump" class="tc-btn" style="width:78px;height:78px; font-size:1.3rem;">⤒</button>
+    </div>
+    <button id="tc-pause" class="tc-btn" style="position:absolute; right:16px; top:16px; width:46px; height:46px; pointer-events:auto;">⏸</button>
+  `;
+  document.body.appendChild(wrap);
+  const style = document.createElement('style');
+  style.textContent = `.tc-btn{ border-radius:50%; background:rgba(255,255,255,0.10); border:2px solid rgba(255,255,255,0.25); color:#fff; font-weight:800; touch-action:none; }`;
+  document.head.appendChild(style);
+
+  const stick = $('tc-stick'), knob = $('tc-knob');
+  let stickId = null, center = {x:0,y:0};
+  function setKnob(dx,dy){ const max=34; const len=Math.min(Math.hypot(dx,dy),max); const ang=Math.atan2(dy,dx); knob.style.left = (34+Math.cos(ang)*len)+'px'; knob.style.top = (34+Math.sin(ang)*len)+'px'; }
+  stick.addEventListener('touchstart', e => { const t=e.changedTouches[0]; stickId=t.identifier; const r=stick.getBoundingClientRect(); center={x:r.left+r.width/2,y:r.top+r.height/2}; }, {passive:true});
+  stick.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== stickId) continue;
+      const dx=t.clientX-center.x, dy=t.clientY-center.y;
+      setKnob(dx,dy);
+      const len=Math.hypot(dx,dy)||1, nx=dx/len, ny=dy/len, mag=Math.min(len/34,1);
+      touchMove.x = nx*mag; touchMove.z = ny*mag;
+    }
+  }, {passive:true});
+  function stickEnd(e){ for (const t of e.changedTouches){ if(t.identifier===stickId){ stickId=null; touchMove.x=0; touchMove.z=0; knob.style.left='34px'; knob.style.top='34px'; } } }
+  stick.addEventListener('touchend', stickEnd, {passive:true});
+  stick.addEventListener('touchcancel', stickEnd, {passive:true});
+
+  const bind = (id, code) => {
+    const el = $(id);
+    if(el) {
+        el.addEventListener('touchstart', e => { e.preventDefault(); if(!K[code]) KP[code]=true; K[code]=true; }, {passive:false});
+        el.addEventListener('touchend',   e => { e.preventDefault(); K[code]=false; KR[code]=true; }, {passive:false});
+    }
+  };
+  bind('tc-jump','Space'); bind('tc-z','KeyZ'); bind('tc-x','KeyX');
+  $('tc-pause')?.addEventListener('touchstart', e => { e.preventDefault(); if (menuState==='playing' && !$('end-overlay')?.classList.contains('show')) setPaused(!paused); }, {passive:false});
+}
 
 // ── Renderer ──────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -114,7 +185,7 @@ const ARTES = {
   vilaoTefe: loadTex('assets/vilao_tefe.png', '#449944'),
   bossGuardiao: loadTex('assets/boss_guardiao.png', '#aa0044'),
   fundoPelotas: loadTex('assets/fundo_pelotas.png', '#87CEEB'),
-  fundoRio: loadTex('assets/fundo_rio.jpg', '#102038'),
+  fundoRio: loadTex('assets/fundo_rio.jpeg', '#102038'), // Corrigido para .jpeg como no seu print do github
   fundoTefe: loadTex('assets/fundo_tefe.jpg', '#102014'),
   fundoBoss: loadTex('assets/fundo_boss.jpg', '#1a0414'),
   chaoAsfalto: loadTex('assets/chao_asfalto.jpg', '#444a55'),
@@ -144,13 +215,12 @@ imgSofia.onload = () => {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
-      // AlphaTest 0.5 mata as bordas sujas
       sofiaFrames[r][c] = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 });
     }
   }
 };
 imgSofia.src = 'assets/sofia1.png';
-const dummySofiaMat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0 }); // Invisível enquanto carrega
+const dummySofiaMat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0 }); 
 
 // ── Particle system ───────────────────────────────────────────────
 const MAX_P = 800;
@@ -190,7 +260,7 @@ function updateParticles(dt) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// GEOMETRY HELPERS (ESTÉTICA MARIO 64 - BORDAS SÓLIDAS)
+// GEOMETRY HELPERS 
 // ═══════════════════════════════════════════════════════════════════
 function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   const g = new THREE.BoxGeometry(w, h, d);
@@ -203,7 +273,6 @@ function makePlatform(scene, x,y,z, w,h,d, color, emissive, textureMap) {
   mesh.receiveShadow = true; mesh.castShadow = true;
   scene.add(mesh);
 
-  // Contorno tipo Mario 64/Cartoon
   const edges = new THREE.EdgesGeometry(g);
   const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2, transparent: true, opacity: 0.35 }));
   mesh.add(line);
@@ -342,6 +411,8 @@ function makePlayer(scene) {
       if (keyDown('KeyW')||keyDown('ArrowUp'))    moveZ -= 1;
       if (keyDown('KeyS')||keyDown('ArrowDown'))  moveZ += 1;
 
+      if (Math.abs(touchMove.x) > 0.05 || Math.abs(touchMove.z) > 0.05) { moveX = touchMove.x; moveZ = touchMove.z; }
+
       const camFwd = new THREE.Vector3(); camera.getWorldDirection(camFwd); camFwd.y = 0; camFwd.normalize();
       const camRight = new THREE.Vector3().crossVectors(camFwd, new THREE.Vector3(0,1,0));
       const move = camFwd.clone().multiplyScalar(-moveZ).add(camRight.clone().multiplyScalar(moveX));
@@ -404,17 +475,16 @@ function makePlayer(scene) {
       if (moving && this.onGround) {
         this.frameTimer += dt;
         if (this.frameTimer > 0.08) { this.frameTimer = 0; this.currentFrame = (this.currentFrame + 1) % 8; }
-        this.currentRow = 1; // Corrida 
+        this.currentRow = 1; 
       } else if (!this.onGround) {
         this.currentFrame = 0; 
-        this.currentRow = 0; // Pulo 
+        this.currentRow = 0; 
       } else {
         this.frameTimer += dt;
         if (this.frameTimer > 0.15) { this.frameTimer = 0; this.currentFrame = (this.currentFrame + 1) % 4; }
-        this.currentRow = 2; // Parada 
+        this.currentRow = 2; 
       }
 
-      // Aplica o material fatiado do canvas perfeitamente isolado
       if (sofiaFrames[this.currentRow] && sofiaFrames[this.currentRow][this.currentFrame]) {
         this.body.material = sofiaFrames[this.currentRow][this.currentFrame];
       }
@@ -452,12 +522,8 @@ function makeEnemy(scene, x,y,z, tipo, textureArte, opts = {}) {
 
   const m = new THREE.SpriteMaterial({ map: textureArte, color: 0xffffff, transparent: true, alphaTest: 0.5 });
   const mesh = new THREE.Sprite(m);
-  mesh.scale.set(1.5, 1.5, 1);
-  mesh.position.set(x,y+0.5,z);
-  scene.add(mesh);
-
-  const pl = new THREE.PointLight(0xff0000, 0.5, 4);
-  mesh.add(pl);
+  mesh.scale.set(1.5, 1.5, 1); mesh.position.set(x,y+0.5,z); scene.add(mesh);
+  const pl = new THREE.PointLight(0xff0000, 0.5, 4); mesh.add(pl);
 
   return { mesh, m, hp:cfg.hp, hpMax:cfg.hp, vel:cfg.vel, pts:cfg.pts, tipo, spawnX:x, spawnY:y, spawnZ:z, dir:1, t:0, alive:true, flashTimer:0, range: opts.range ?? cfg.range, vy:0, onGround:false };
 }
@@ -545,8 +611,7 @@ function updateBoss(dt, boss, player, scene) {
   boss.t += dt;
   if (boss.flashTimer > 0) { boss.flashTimer -= dt; boss.bodyM.color.setHex(boss.flashTimer>0 ? 0xff0000 : (boss.fase===2 ? 0xffaaaa : 0xffffff)); }
 
-  const spd = boss.fase===2 ? 4.5 : 2.5;
-  boss.mesh.position.x += boss.dir * spd * dt;
+  const spd = boss.fase===2 ? 4.5 : 2.5; boss.mesh.position.x += boss.dir * spd * dt;
   if (Math.abs(boss.mesh.position.x - boss.spawnX) > 7) boss.dir *= -1;
   boss.mesh.position.y = boss.spawnY + Math.sin(boss.t*1.5) * 0.4;
 
@@ -844,6 +909,7 @@ function startGame() {
 }
 
 buildPauseOverlay();
+buildTouchControls();
 
 threeScene = new THREE.Scene(); threeScene.background = new THREE.Color(0x07090f); threeScene.add(new THREE.AmbientLight(0x112244,0.5)); threeScene.add(pMesh);
 renderer.render(threeScene, camera);
